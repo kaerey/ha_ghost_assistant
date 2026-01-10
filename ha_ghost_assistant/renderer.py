@@ -65,6 +65,7 @@ class FullscreenRenderer:
             return
         if event.type != pygame.KEYDOWN:
             return
+        LOGGER.info("Keydown: %s", pygame.key.name(event.key))
         if event.key == pygame.K_ESCAPE:
             stop_event.set()
         elif event.key == pygame.K_w:

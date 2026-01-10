@@ -20,7 +20,7 @@ class AudioLevel:
 class AudioCapture:
     """Capture audio from the default microphone and provide level updates."""
 
-    def __init__(self, samplerate: int = 16000, blocksize: int = 1024) -> None:
+    def __init__(self, samplerate: int = 16000, blocksize: int = 2048) -> None:
         self._samplerate = samplerate
         self._blocksize = blocksize
         self._raw_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=20)
