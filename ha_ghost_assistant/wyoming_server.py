@@ -101,6 +101,7 @@ class WyomingServer:
         self._writer_lock = asyncio.Lock()
         self._stream_task: asyncio.Task[None] | None = None
         self._stop_stream = asyncio.Event()
+        self._pending_trigger: str | None = None
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -134,6 +135,10 @@ class WyomingServer:
             except Exception:
                 LOGGER.exception("Failed to close previous Wyoming client")
         self._writer = writer
+        if self._pending_trigger is not None:
+            pending = self._pending_trigger
+            self._pending_trigger = None
+            await self.trigger(name=pending)
         try:
             while True:
                 event = await self._read_event(reader)
@@ -169,7 +174,8 @@ class WyomingServer:
         self, name: str = "push_to_talk", start_stream: bool = True
     ) -> None:
         if self._writer is None:
-            LOGGER.warning("No Wyoming client connected; trigger ignored")
+            self._pending_trigger = name
+            LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
         data = {"name": name, "model": "ha_ghost_assistant"}
         await self._send_event(self._writer, {"type": "wake-word-detected", "data": data})
