@@ -41,9 +41,11 @@ class WyomingDiscovery:
         try:
             ip_address = _local_ip(self._host)
             properties: dict[str, str] = {
+                "id": self._info.satellite_id,
                 "name": self._info.name,
                 "description": self._info.description,
                 "version": self._info.version,
+                "software": self._info.software,
                 "attribution": self._info.attribution,
                 "supports_trigger": str(self._info.supports_trigger).lower(),
                 "has_vad": str(self._info.has_vad).lower(),

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 from typing import Iterable
 
@@ -74,6 +75,14 @@ async def run(host: str, port: int) -> None:
         renderer.set_state("idle")
         await wyoming_server.start()
         await discovery.start()
+        wait_for_ha = os.getenv("HA_GHOST_ASSISTANT_WAIT_FOR_HA", "1").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if wait_for_ha:
+            logger.info("Waiting for Wyoming client connection...")
+            await wyoming_server.wait_for_client()
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),

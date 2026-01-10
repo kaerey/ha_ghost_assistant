@@ -107,6 +107,7 @@ class WyomingServer:
         self._stream_task: asyncio.Task[None] | None = None
         self._stop_stream = asyncio.Event()
         self._pending_trigger: str | None = None
+        self._client_connected = asyncio.Event()
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -140,6 +141,7 @@ class WyomingServer:
             except Exception:
                 LOGGER.exception("Failed to close previous Wyoming client")
         self._writer = writer
+        self._client_connected.set()
         if self._pending_trigger is not None:
             pending = self._pending_trigger
             self._pending_trigger = None
@@ -159,6 +161,7 @@ class WyomingServer:
             await writer.wait_closed()
             if self._writer is writer:
                 self._writer = None
+                self._client_connected.clear()
 
     async def _handle_event(
         self, event: dict[str, object], writer: asyncio.StreamWriter
@@ -189,6 +192,16 @@ class WyomingServer:
         await self._send_event(self._writer, {"type": "wake-word-detected", "data": data})
         if start_stream:
             await self._start_streaming()
+
+    async def wait_for_client(self, timeout: float | None = None) -> bool:
+        try:
+            if timeout is None:
+                await self._client_connected.wait()
+                return True
+            await asyncio.wait_for(self._client_connected.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     async def _start_streaming(self) -> None:
         if self._writer is None:
