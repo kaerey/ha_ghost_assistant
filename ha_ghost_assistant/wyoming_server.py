@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import socket
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -73,7 +74,8 @@ class WyomingServer:
         self._on_state = on_state
         self._server: asyncio.AbstractServer | None = None
         self._state = "idle"
-        self._writer: asyncio.StreamWriter | None = None
+        self._server_id: str | None = None
+        self._server_writer: asyncio.StreamWriter | None = None
         self._writer_lock = asyncio.Lock()
         self._stream_task: asyncio.Task[None] | None = None
         self._stop_stream = asyncio.Event()
@@ -104,15 +106,7 @@ class WyomingServer:
     ) -> None:
         peer = writer.get_extra_info("peername")
         LOGGER.info("Wyoming client connected: %s", peer)
-        if self._writer is not None and self._writer is not writer:
-            LOGGER.info("Replacing existing Wyoming client connection")
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                LOGGER.exception("Failed to close previous Wyoming client")
-        self._writer = writer
-        self._client_connected.set()
+        client_id = str(time.monotonic_ns())
         if self._pending_trigger is not None:
             pending = self._pending_trigger
             self._pending_trigger = None
@@ -123,6 +117,14 @@ class WyomingServer:
                 if event is None:
                     break
                 LOGGER.info("Wyoming event received: %s", event.get("type"))
+                if event.get("type") != "describe":
+                    if self._server_id is None:
+                        self._server_id = client_id
+                        self._server_writer = writer
+                        self._client_connected.set()
+                    elif self._server_id != client_id:
+                        LOGGER.info("Wyoming connection cancelled: %s", client_id)
+                        break
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
@@ -130,8 +132,9 @@ class WyomingServer:
             await self._stop_streaming()
             writer.close()
             await writer.wait_closed()
-            if self._writer is writer:
-                self._writer = None
+            if self._server_id == client_id:
+                self._server_id = None
+                self._server_writer = None
                 self._client_connected.clear()
 
     async def _handle_event(
@@ -158,12 +161,14 @@ class WyomingServer:
     async def trigger(
         self, name: str = "push_to_talk", start_stream: bool = True
     ) -> None:
-        if self._writer is None:
+        if self._server_writer is None:
             self._pending_trigger = name
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
         data = {"name": name, "model": "ha_ghost_assistant"}
-        await self._send_event(self._writer, {"type": "wake-word-detected", "data": data})
+        await self._send_event(
+            self._server_writer, {"type": "wake-word-detected", "data": data}
+        )
         if start_stream:
             await self._start_streaming()
 
@@ -178,14 +183,14 @@ class WyomingServer:
             return False
 
     async def _start_streaming(self) -> None:
-        if self._writer is None:
+        if self._server_writer is None:
             LOGGER.warning("No Wyoming client connected; cannot start streaming")
             return
         if self._stream_task is not None and not self._stream_task.done():
             return
         self._audio.clear_audio()
         self._stop_stream.clear()
-        self._stream_task = asyncio.create_task(self._stream_audio(self._writer))
+        self._stream_task = asyncio.create_task(self._stream_audio(self._server_writer))
         self._set_state("listening")
 
     async def _stop_streaming(self) -> None:
@@ -198,8 +203,8 @@ class WyomingServer:
         except asyncio.CancelledError:
             pass
         self._stream_task = None
-        if self._writer is not None and not self._writer.is_closing():
-            await self._send_event(self._writer, {"type": "audio-stop"})
+        if self._server_writer is not None and not self._server_writer.is_closing():
+            await self._send_event(self._server_writer, {"type": "audio-stop"})
         self._set_state("idle")
 
     async def _stream_audio(self, writer: asyncio.StreamWriter) -> None:
