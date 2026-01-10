@@ -46,9 +46,6 @@ class WyomingInfo:
             "satellite": {
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
-                "wake_words": [self.wake_name],
-                "active_wake_words": [self.wake_name],
-                "wake_word_models": [self.wake_model],
             },
             "mic": [
                 {
@@ -171,6 +168,7 @@ class WyomingServer:
             await self._send_event(writer, info_event)
             return
         if event_type == "ping":
+            LOGGER.info("Wyoming ping received")
             await self._send_event(writer, {"type": "pong"})
             if not self._ping_enabled:
                 self._enable_ping()
@@ -179,9 +177,11 @@ class WyomingServer:
             self._pong_event.set()
             return
         if event_type == "run-satellite":
+            LOGGER.info("Wyoming run-satellite received")
             await self._start_streaming()
             return
         if event_type == "pause-satellite":
+            LOGGER.info("Wyoming pause-satellite received")
             await self._stop_streaming()
             return
         LOGGER.warning("Unhandled Wyoming event: %s", event_type)
@@ -311,6 +311,7 @@ class WyomingServer:
         if payload is not None:
             event = dict(event)
             event["payload_length"] = len(payload)
+        LOGGER.info("Wyoming event sent: %s", event.get("type"))
         message = json.dumps(event).encode("utf-8") + b"\n"
         async with self._writer_lock:
             writer.write(message)
