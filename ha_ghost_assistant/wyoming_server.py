@@ -240,10 +240,15 @@ class WyomingServer:
                 },
             },
         )
+        LOGGER.debug("Wyoming audio streaming started")
+        first_chunk = True
         try:
             while not self._stop_stream.is_set():
                 chunk = await self._audio.next_chunk()
                 await self._send_event(writer, {"type": "audio-chunk"}, payload=chunk)
+                if first_chunk:
+                    LOGGER.debug("Wyoming audio-chunk sent")
+                    first_chunk = False
         except asyncio.CancelledError:
             return
 
@@ -263,7 +268,7 @@ class WyomingServer:
     ) -> None:
         if payload is not None:
             event = dict(event)
-            event["data_length"] = len(payload)
+            event["payload_length"] = len(payload)
         message = json.dumps(event).encode("utf-8") + b"\n"
         async with self._writer_lock:
             writer.write(message)
@@ -283,9 +288,15 @@ class WyomingServer:
             LOGGER.warning("Failed to decode Wyoming event")
             return None
         data_length = event.get("data_length")
+        payload_length = event.get("payload_length")
         if isinstance(data_length, int) and data_length > 0:
             try:
                 await reader.readexactly(data_length)
+            except asyncio.IncompleteReadError:
+                LOGGER.warning("Incomplete Wyoming data payload read")
+        if isinstance(payload_length, int) and payload_length > 0:
+            try:
+                await reader.readexactly(payload_length)
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Incomplete Wyoming payload read")
         return event
