@@ -43,7 +43,7 @@ class WyomingInfo:
             "id": self.satellite_id,
             "software": self.software,
             "satellite": {
-                "name": "ha_ghost_assistant",
+                "name": self.name,
                 "attribution": {
                     "name": "ha_ghost_assistant",
                     "url": "https://github.com/kaerey/ha_ghost_assistant",
