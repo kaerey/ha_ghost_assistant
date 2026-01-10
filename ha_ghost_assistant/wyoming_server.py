@@ -43,12 +43,14 @@ class WyomingInfo:
             "id": self.satellite_id,
             "software": self.software,
             "satellite": {
+                # Required by Home Assistant wyoming parser
                 "name": self.name,
+                "installed": True,
                 "attribution": {
-                    "name": "ha_ghost_assistant",
+                    "name": self.software,
                     "url": "https://github.com/kaerey/ha_ghost_assistant",
                 },
-                "installed": True,
+                # Satellite capabilities
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
                 "active_wake_words": [],
