@@ -73,7 +73,7 @@ async def run(host: str, port: int) -> None:
         audio.start(loop)
         renderer.set_state("idle")
         await wyoming_server.start()
-        discovery.start()
+        await discovery.start()
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
@@ -90,7 +90,7 @@ async def run(host: str, port: int) -> None:
         await playback.stop()
         await wake_word.stop()
         await wyoming_server.stop()
-        discovery.stop()
+        await discovery.stop()
         for task in tasks:
             task.cancel()
         await _gather_safely(tasks)

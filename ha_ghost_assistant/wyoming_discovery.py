@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 import socket
 
-from zeroconf import IPVersion, ServiceInfo, Zeroconf
+from zeroconf import IPVersion, ServiceInfo
+from zeroconf.asyncio import AsyncZeroconf
 
 from ha_ghost_assistant.wyoming_server import WyomingInfo
 
@@ -31,10 +32,10 @@ class WyomingDiscovery:
         self._host = host
         self._port = port
         self._info = info
-        self._zeroconf: Zeroconf | None = None
+        self._zeroconf: AsyncZeroconf | None = None
         self._service_info: ServiceInfo | None = None
 
-    def start(self) -> None:
+    async def start(self) -> None:
         if self._zeroconf is not None:
             return
         try:
@@ -56,18 +57,18 @@ class WyomingDiscovery:
                 properties=properties,
                 server=f"{socket.gethostname()}.local.",
             )
-            self._zeroconf = Zeroconf(ip_version=IPVersion.V4Only)
-            self._zeroconf.register_service(self._service_info)
+            self._zeroconf = AsyncZeroconf(ip_version=IPVersion.V4Only)
+            await self._zeroconf.async_register_service(self._service_info)
             LOGGER.info("Wyoming discovery broadcast at %s:%s", ip_address, self._port)
         except Exception:
             LOGGER.exception("Failed to start Wyoming discovery")
-            self.stop()
+            await self.stop()
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         if self._zeroconf is None:
             return
         if self._service_info is not None:
-            self._zeroconf.unregister_service(self._service_info)
-        self._zeroconf.close()
+            await self._zeroconf.async_unregister_service(self._service_info)
+        await self._zeroconf.async_close()
         self._zeroconf = None
         self._service_info = None
