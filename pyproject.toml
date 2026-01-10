@@ -1,0 +1,20 @@
+[project]
+name = "ha-ghost-assistant"
+version = "0.0.1"
+description = "Home Assistant visual voice satellite prototype."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+authors = [{name = "OpenAI"}]
+dependencies = [
+  "numpy>=1.26",
+  "sounddevice>=0.4",
+  "pygame>=2.5",
+]
+
+[project.scripts]
+ha-ghost-assistant = "ha_ghost_assistant.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ha_ghost_assistant*"]
