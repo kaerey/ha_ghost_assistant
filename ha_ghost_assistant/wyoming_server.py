@@ -9,11 +9,15 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+import numpy as np
+
 from ha_ghost_assistant.audio import AudioCapture
 
 LOGGER = logging.getLogger(__name__)
 PING_SEND_DELAY = 2.0
 PONG_TIMEOUT = 5.0
+SILENCE_THRESHOLD = 0.01
+SILENCE_TIMEOUT = 1.0
 
 
 @dataclass
@@ -195,8 +199,6 @@ class WyomingServer:
         if event_type == "ping":
             LOGGER.info("Wyoming ping received")
             await self._send_event(writer, {"type": "pong"})
-            if not self._ping_enabled:
-                self._enable_ping()
             return
         if event_type == "pong":
             self._pong_event.set()
@@ -224,6 +226,9 @@ class WyomingServer:
         )
         if start_stream:
             await self._start_streaming()
+
+    async def stop_streaming(self) -> None:
+        await self._stop_streaming()
 
     async def wait_for_client(self, timeout: float | None = None) -> bool:
         try:
@@ -284,6 +289,9 @@ class WyomingServer:
     async def _stop_streaming(self) -> None:
         if self._stream_task is None:
             return
+        if self._stream_task.done():
+            self._stream_task = None
+            return
         self._stop_stream.set()
         self._stream_task.cancel()
         try:
@@ -296,6 +304,7 @@ class WyomingServer:
         self._set_state("idle")
 
     async def _stream_audio(self, writer: asyncio.StreamWriter) -> None:
+        self._stop_stream.clear()
         await self._send_event(
             writer,
             {
@@ -309,15 +318,33 @@ class WyomingServer:
         )
         LOGGER.debug("Wyoming audio streaming started")
         first_chunk = True
+        silence_duration = 0.0
         try:
             while not self._stop_stream.is_set():
                 chunk = await self._audio.next_chunk()
                 await self._send_event(writer, {"type": "audio-chunk"}, payload=chunk)
+                audio = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                rms = float(np.sqrt(np.mean(np.square(audio))))
+                chunk_duration = (
+                    len(chunk) / (self._info.mic_width * self._info.mic_channels)
+                ) / self._info.mic_rate
+                if rms < SILENCE_THRESHOLD:
+                    silence_duration += chunk_duration
+                    if silence_duration >= SILENCE_TIMEOUT:
+                        LOGGER.info("Silence detected; stopping audio stream")
+                        self._stop_stream.set()
+                        break
+                else:
+                    silence_duration = 0.0
                 if first_chunk:
                     LOGGER.debug("Wyoming audio-chunk sent")
                     first_chunk = False
         except asyncio.CancelledError:
             return
+        if writer is not None and not writer.is_closing():
+            await self._send_event(writer, {"type": "audio-stop"})
+        self._set_state("idle")
+        self._stream_task = None
 
     def _set_state(self, state: str) -> None:
         if state == self._state:

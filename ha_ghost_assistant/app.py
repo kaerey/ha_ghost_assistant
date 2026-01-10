@@ -68,6 +68,7 @@ async def run(host: str, port: int) -> None:
         on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name))
     )
     renderer.set_trigger(lambda: loop.create_task(wyoming_server.trigger()))
+    renderer.set_stop(lambda: loop.create_task(wyoming_server.stop_streaming()))
 
     tasks: list[asyncio.Task[None]] = []
     try:
