@@ -59,6 +59,12 @@ class WyomingInfo:
             },
             "mic": [
                 {
+                    "name": f"{self.software}_mic",
+                    "installed": True,
+                    "attribution": {
+                        "name": self.software,
+                        "url": "https://github.com/kaerey/ha_ghost_assistant",
+                    },
                     "mic_format": {
                         "rate": self.mic_rate,
                         "width": self.mic_width,
@@ -68,6 +74,12 @@ class WyomingInfo:
             ],
             "snd": [
                 {
+                    "name": f"{self.software}_snd",
+                    "installed": True,
+                    "attribution": {
+                        "name": self.software,
+                        "url": "https://github.com/kaerey/ha_ghost_assistant",
+                    },
                     "snd_format": {
                         "rate": 22050,
                         "width": self.snd_width,
