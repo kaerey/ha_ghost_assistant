@@ -26,6 +26,8 @@ class WyomingInfo:
     snd_channels: int = 1
     supports_trigger: bool = True
     has_vad: bool = False
+    wake_name: str = "push_to_talk"
+    wake_model: str = "ha_ghost_assistant"
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -43,6 +45,13 @@ class WyomingInfo:
                 "rate": self.mic_rate,
                 "width": self.mic_width,
                 "channels": self.mic_channels,
+                "sample_rate": self.mic_rate,
+                "sample_width": self.mic_width,
+                "mic_format": {
+                    "rate": self.mic_rate,
+                    "width": self.mic_width,
+                    "channels": self.mic_channels,
+                },
             },
             "snd": {
                 "name": "Default Speaker",
@@ -50,7 +59,20 @@ class WyomingInfo:
                 "rate": self.snd_rate,
                 "width": self.snd_width,
                 "channels": self.snd_channels,
+                "sample_rate": self.snd_rate,
+                "sample_width": self.snd_width,
+                "snd_format": {
+                    "rate": self.snd_rate,
+                    "width": self.snd_width,
+                    "channels": self.snd_channels,
+                },
             },
+            "wake": [
+                {
+                    "name": self.wake_name,
+                    "model": self.wake_model,
+                }
+            ],
         }
 
 
