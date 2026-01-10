@@ -19,13 +19,16 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
 
-async def log_audio_levels(stop_event: asyncio.Event, audio: AudioCapture) -> None:
+async def log_audio_levels(
+    stop_event: asyncio.Event, audio: AudioCapture, renderer: FullscreenRenderer
+) -> None:
     while not stop_event.is_set():
         try:
             level = await asyncio.wait_for(audio.next_level(), timeout=1.0)
         except asyncio.TimeoutError:
             continue
-        logging.getLogger(__name__).info("Audio level RMS: %.6f", level.rms)
+        renderer.set_rms(level.rms)
+        logging.getLogger(__name__).debug("Audio level RMS: %.6f", level.rms)
 
 
 def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event) -> None:
@@ -56,9 +59,11 @@ async def run() -> None:
     tasks: list[asyncio.Task[None]] = []
     try:
         audio.start(loop)
+        renderer.set_state("listening")
+        logger.info("Listening for audio")
         tasks.extend(
             [
-                asyncio.create_task(log_audio_levels(stop_event, audio)),
+                asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
                 asyncio.create_task(playback.start()),
                 asyncio.create_task(renderer.run(stop_event)),
                 asyncio.create_task(wake_word.start()),
@@ -68,7 +73,7 @@ async def run() -> None:
         await stop_event.wait()
     finally:
         logger.info("Shutting down")
-        audio.stop()
+        await audio.stop()
         renderer.close()
         await playback.stop()
         await wake_word.stop()
