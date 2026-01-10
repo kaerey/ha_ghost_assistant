@@ -14,6 +14,10 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class WyomingInfo:
+    name: str = "HA Ghost Assistant"
+    description: str = "Home Assistant Wyoming satellite"
+    version: str = "0.0.1"
+    attribution: str = "OpenAI"
     mic_rate: int = 16000
     mic_width: int = 2
     mic_channels: int = 1
@@ -26,10 +30,16 @@ class WyomingInfo:
     def as_dict(self) -> dict[str, object]:
         return {
             "satellite": {
+                "name": self.name,
+                "description": self.description,
+                "version": self.version,
+                "attribution": self.attribution,
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
             },
             "mic": {
+                "name": "Default Microphone",
+                "description": "Default system microphone",
                 "mic_format": {
                     "rate": self.mic_rate,
                     "width": self.mic_width,
@@ -37,6 +47,8 @@ class WyomingInfo:
                 }
             },
             "snd": {
+                "name": "Default Speaker",
+                "description": "Default system speaker",
                 "snd_format": {
                     "rate": self.snd_rate,
                     "width": self.snd_width,
