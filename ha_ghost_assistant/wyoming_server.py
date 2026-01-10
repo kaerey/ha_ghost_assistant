@@ -40,7 +40,6 @@ class WyomingInfo:
             "name": self.name,
             "description": self.description,
             "version": self.version,
-            "attribution": self.attribution,
             "id": self.satellite_id,
             "software": self.software,
             "satellite": {
@@ -59,7 +58,7 @@ class WyomingInfo:
             "snd": [
                 {
                     "snd_format": {
-                        "rate": self.snd_rate,
+                        "rate": 22050,
                         "width": self.snd_width,
                         "channels": self.snd_channels,
                     }
