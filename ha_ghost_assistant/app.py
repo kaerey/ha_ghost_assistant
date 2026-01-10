@@ -10,7 +10,8 @@ from ha_ghost_assistant.audio import AudioCapture
 from ha_ghost_assistant.playback import AudioPlayback
 from ha_ghost_assistant.renderer import FullscreenRenderer
 from ha_ghost_assistant.wake_word import WakeWordDetector
-from ha_ghost_assistant.wyoming_server import WyomingServer
+from ha_ghost_assistant.wyoming_discovery import WyomingDiscovery
+from ha_ghost_assistant.wyoming_server import WyomingInfo, WyomingServer
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
@@ -53,12 +54,15 @@ async def run(host: str, port: int) -> None:
     audio = AudioCapture()
     playback = AudioPlayback()
     renderer = FullscreenRenderer()
+    info = WyomingInfo()
     wyoming_server = WyomingServer(
         host=host,
         port=port,
         audio=audio,
+        info=info,
         on_state=renderer.set_state,
     )
+    discovery = WyomingDiscovery(host=host, port=port, info=info)
     wake_word = WakeWordDetector(
         on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name))
     )
@@ -69,6 +73,7 @@ async def run(host: str, port: int) -> None:
         audio.start(loop)
         renderer.set_state("idle")
         await wyoming_server.start()
+        discovery.start()
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
@@ -85,6 +90,7 @@ async def run(host: str, port: int) -> None:
         await playback.stop()
         await wake_word.stop()
         await wyoming_server.stop()
+        discovery.stop()
         for task in tasks:
             task.cancel()
         await _gather_safely(tasks)
