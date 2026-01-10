@@ -25,6 +25,7 @@ class AudioCapture:
         self._blocksize = blocksize
         self._raw_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=20)
         self._level_queue: asyncio.Queue[AudioLevel] = asyncio.Queue()
+        self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=40)
         self._stream: sd.InputStream | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._processor_task: asyncio.Task[None] | None = None
@@ -42,7 +43,7 @@ class AudioCapture:
             samplerate=self._samplerate,
             blocksize=self._blocksize,
             channels=1,
-            dtype="float32",
+            dtype="int16",
             callback=callback,
         )
         self._stream.start()
@@ -51,6 +52,16 @@ class AudioCapture:
 
     async def next_level(self) -> AudioLevel:
         return await self._level_queue.get()
+
+    async def next_chunk(self) -> bytes:
+        return await self._audio_queue.get()
+
+    def clear_audio(self) -> None:
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
 
     def _enqueue_raw(self, data: np.ndarray) -> None:
         if self._raw_queue.full():
@@ -62,12 +73,25 @@ class AudioCapture:
             self._raw_queue.put_nowait(data)
         except asyncio.QueueFull:
             return
+        self._enqueue_audio(data)
+
+    def _enqueue_audio(self, data: np.ndarray) -> None:
+        if self._audio_queue.full():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+        try:
+            self._audio_queue.put_nowait(data.copy().tobytes())
+        except asyncio.QueueFull:
+            return
 
     async def _process_audio(self) -> None:
         try:
             while True:
                 data = await self._raw_queue.get()
-                rms = float(np.sqrt(np.mean(np.square(data))))
+                float_data = data.astype(np.float32) / 32768.0
+                rms = float(np.sqrt(np.mean(np.square(float_data))))
                 await self._level_queue.put(AudioLevel(rms=rms))
         except asyncio.CancelledError:
             return
