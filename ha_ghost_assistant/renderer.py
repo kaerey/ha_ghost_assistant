@@ -12,7 +12,7 @@ STATE_COLORS: dict[str, tuple[int, int, int]] = {
     "idle": (90, 90, 90),
     "listening": (0, 160, 255),
     "thinking": (255, 200, 0),
-    "speaking": (0, 220, 120),
+    "responding": (0, 220, 120),
 }
 
 
@@ -46,7 +46,7 @@ class FullscreenRenderer:
         if state == self._state:
             return
         self._state = state
-        LOGGER.info("Renderer state set to %s", state)
+        LOGGER.info("State set to %s", state)
 
     def set_rms(self, rms: float) -> None:
         self._rms = rms
@@ -75,7 +75,7 @@ class FullscreenRenderer:
         elif event.key == pygame.K_t:
             self.set_state("thinking")
         elif event.key == pygame.K_s:
-            self.set_state("speaking")
+            self.set_state("responding")
         elif event.key == pygame.K_i:
             self.set_state("idle")
 
