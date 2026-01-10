@@ -82,7 +82,16 @@ async def run(host: str, port: int) -> None:
         )
         if wait_for_ha:
             logger.info("Waiting for Wyoming client connection...")
-            await wyoming_server.wait_for_client()
+            wait_task = asyncio.create_task(wyoming_server.wait_for_client())
+            stop_task = asyncio.create_task(stop_event.wait())
+            done, pending = await asyncio.wait(
+                {wait_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await _gather_safely(pending)
+            if stop_task in done:
+                return
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),

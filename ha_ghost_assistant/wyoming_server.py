@@ -43,15 +43,31 @@ class WyomingInfo:
             "attribution": self.attribution,
             "id": self.satellite_id,
             "software": self.software,
-            "supports_trigger": self.supports_trigger,
-            "has_vad": self.has_vad,
-            "wake_words": [self.wake_name],
-            "audio": {
-                "rate": self.mic_rate,
-                "channels": self.mic_channels,
-                "width": self.mic_width,
-                "format": "S16LE",
+            "satellite": {
+                "supports_trigger": self.supports_trigger,
+                "has_vad": self.has_vad,
+                "wake_words": [self.wake_name],
+                "active_wake_words": [self.wake_name],
+                "wake_word_models": [self.wake_model],
             },
+            "mic": [
+                {
+                    "mic_format": {
+                        "rate": self.mic_rate,
+                        "width": self.mic_width,
+                        "channels": self.mic_channels,
+                    }
+                }
+            ],
+            "snd": [
+                {
+                    "snd_format": {
+                        "rate": self.snd_rate,
+                        "width": self.snd_width,
+                        "channels": self.snd_channels,
+                    }
+                }
+            ],
         }
 
 
@@ -150,6 +166,7 @@ class WyomingServer:
         if event_type == "describe":
             LOGGER.info("Wyoming describe request: %s", event)
             info_event = {"type": "info", "data": self._info.as_dict()}
+            LOGGER.debug("Wyoming info data: %s", info_event["data"])
             LOGGER.info("Wyoming info response: %s", json.dumps(info_event))
             await self._send_event(writer, info_event)
             return
