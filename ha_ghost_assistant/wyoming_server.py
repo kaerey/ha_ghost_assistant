@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+import socket
+from dataclasses import dataclass, field
 from typing import Callable
 
 from ha_ghost_assistant.audio import AudioCapture
@@ -18,6 +19,8 @@ class WyomingInfo:
     description: str = "Home Assistant Wyoming satellite"
     version: str = "0.0.1"
     attribution: str = "OpenAI"
+    satellite_id: str = field(default_factory=lambda: socket.gethostname())
+    software: str = "ha_ghost_assistant"
     mic_rate: int = 16000
     mic_width: int = 2
     mic_channels: int = 1
@@ -36,6 +39,8 @@ class WyomingInfo:
                 "description": self.description,
                 "version": self.version,
                 "attribution": self.attribution,
+                "id": self.satellite_id,
+                "software": self.software,
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
             },
@@ -161,6 +166,9 @@ class WyomingServer:
         event_type = event.get("type")
         if event_type == "describe":
             await self._send_event(writer, {"type": "info", "data": self._info.as_dict()})
+            return
+        if event_type == "ping":
+            await self._send_event(writer, {"type": "pong"})
             return
         if event_type == "run-satellite":
             await self._start_streaming()
