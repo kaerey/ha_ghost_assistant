@@ -12,6 +12,8 @@ from typing import Callable
 from ha_ghost_assistant.audio import AudioCapture
 
 LOGGER = logging.getLogger(__name__)
+PING_SEND_DELAY = 2.0
+PONG_TIMEOUT = 5.0
 
 
 @dataclass
@@ -81,6 +83,9 @@ class WyomingServer:
         self._stop_stream = asyncio.Event()
         self._pending_trigger: str | None = None
         self._client_connected = asyncio.Event()
+        self._ping_enabled = False
+        self._pong_event = asyncio.Event()
+        self._ping_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -136,6 +141,7 @@ class WyomingServer:
                 self._server_id = None
                 self._server_writer = None
                 self._client_connected.clear()
+                self._disable_ping()
 
     async def _handle_event(
         self, event: dict[str, object], writer: asyncio.StreamWriter
@@ -149,6 +155,11 @@ class WyomingServer:
             return
         if event_type == "ping":
             await self._send_event(writer, {"type": "pong"})
+            if not self._ping_enabled:
+                self._enable_ping()
+            return
+        if event_type == "pong":
+            self._pong_event.set()
             return
         if event_type == "run-satellite":
             await self._start_streaming()
@@ -181,6 +192,41 @@ class WyomingServer:
             return True
         except asyncio.TimeoutError:
             return False
+
+    def _enable_ping(self) -> None:
+        self._ping_enabled = True
+        if self._ping_task is None:
+            self._ping_task = asyncio.create_task(self._ping_server())
+
+    def _disable_ping(self) -> None:
+        self._ping_enabled = False
+        if self._ping_task is not None:
+            self._ping_task.cancel()
+            self._ping_task = None
+
+    async def _ping_server(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(PING_SEND_DELAY)
+                if not self._ping_enabled or self._server_writer is None:
+                    continue
+                self._pong_event.clear()
+                await self._send_event(
+                    self._server_writer,
+                    {"type": "ping", "data": {"text": str(time.monotonic())}},
+                )
+                try:
+                    await asyncio.wait_for(self._pong_event.wait(), timeout=PONG_TIMEOUT)
+                except asyncio.TimeoutError:
+                    if self._server_writer is None:
+                        continue
+                    LOGGER.warning("Wyoming ping timeout; clearing server connection")
+                    self._server_id = None
+                    self._server_writer = None
+                    self._client_connected.clear()
+                    self._disable_ping()
+        except asyncio.CancelledError:
+            return
 
     async def _start_streaming(self) -> None:
         if self._server_writer is None:
