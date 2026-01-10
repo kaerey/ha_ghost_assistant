@@ -40,20 +40,16 @@ class WyomingInfo:
             "mic": {
                 "name": "Default Microphone",
                 "description": "Default system microphone",
-                "mic_format": {
-                    "rate": self.mic_rate,
-                    "width": self.mic_width,
-                    "channels": self.mic_channels,
-                }
+                "rate": self.mic_rate,
+                "width": self.mic_width,
+                "channels": self.mic_channels,
             },
             "snd": {
                 "name": "Default Speaker",
                 "description": "Default system speaker",
-                "snd_format": {
-                    "rate": self.snd_rate,
-                    "width": self.snd_width,
-                    "channels": self.snd_channels,
-                }
+                "rate": self.snd_rate,
+                "width": self.snd_width,
+                "channels": self.snd_channels,
             },
         }
 
