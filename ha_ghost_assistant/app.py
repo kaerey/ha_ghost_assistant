@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 from typing import Iterable
 
@@ -10,8 +11,8 @@ from ha_ghost_assistant.audio import AudioCapture
 from ha_ghost_assistant.playback import AudioPlayback
 from ha_ghost_assistant.renderer import FullscreenRenderer
 from ha_ghost_assistant.wake_word import WakeWordDetector
-from ha_ghost_assistant.wyoming import WyomingClient
-from ha_ghost_assistant.wyoming_server import WyomingServer
+from ha_ghost_assistant.wyoming_discovery import WyomingDiscovery
+from ha_ghost_assistant.wyoming_server import WyomingInfo, WyomingServer
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
@@ -54,22 +55,40 @@ async def run(host: str, port: int) -> None:
     audio = AudioCapture()
     playback = AudioPlayback()
     renderer = FullscreenRenderer()
-    wake_word = WakeWordDetector()
-    wyoming = WyomingClient()
-    wyoming_server = WyomingServer(host=host, port=port, on_state=renderer.set_state)
+    info = WyomingInfo()
+    wyoming_server = WyomingServer(
+        host=host,
+        port=port,
+        audio=audio,
+        info=info,
+        on_state=renderer.set_state,
+    )
+    discovery = WyomingDiscovery(host=host, port=port, info=info)
+    wake_word = WakeWordDetector(
+        on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name))
+    )
+    renderer.set_trigger(lambda: loop.create_task(wyoming_server.trigger()))
 
     tasks: list[asyncio.Task[None]] = []
     try:
         audio.start(loop)
         renderer.set_state("idle")
         await wyoming_server.start()
+        await discovery.start()
+        wait_for_ha = os.getenv("HA_GHOST_ASSISTANT_WAIT_FOR_HA", "1").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if wait_for_ha:
+            logger.info("Waiting for Wyoming client connection...")
+            await wyoming_server.wait_for_client()
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
                 asyncio.create_task(playback.start()),
                 asyncio.create_task(renderer.run(stop_event)),
                 asyncio.create_task(wake_word.start()),
-                asyncio.create_task(wyoming.connect()),
             ]
         )
         await stop_event.wait()
@@ -79,8 +98,8 @@ async def run(host: str, port: int) -> None:
         renderer.close()
         await playback.stop()
         await wake_word.stop()
-        await wyoming.disconnect()
         await wyoming_server.stop()
+        await discovery.stop()
         for task in tasks:
             task.cancel()
         await _gather_safely(tasks)
