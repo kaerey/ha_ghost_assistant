@@ -52,36 +52,6 @@ class WyomingInfo:
                 "width": self.mic_width,
                 "format": "S16LE",
             },
-            "satellite": {
-                "name": self.name,
-                "description": self.description,
-                "version": self.version,
-                "attribution": self.attribution,
-                "id": self.satellite_id,
-                "software": self.software,
-                "supports_trigger": self.supports_trigger,
-                "has_vad": self.has_vad,
-            },
-            "mic": {
-                "name": "Default Microphone",
-                "description": "Default system microphone",
-                "rate": self.mic_rate,
-                "width": self.mic_width,
-                "channels": self.mic_channels,
-            },
-            "snd": {
-                "name": "Default Speaker",
-                "description": "Default system speaker",
-                "rate": self.snd_rate,
-                "width": self.snd_width,
-                "channels": self.snd_channels,
-            },
-            "wake": [
-                {
-                    "name": self.wake_name,
-                    "model": self.wake_model,
-                }
-            ],
         }
 
 
