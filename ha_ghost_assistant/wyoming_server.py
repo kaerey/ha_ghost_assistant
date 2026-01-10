@@ -45,6 +45,9 @@ class WyomingInfo:
             "satellite": {
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
+                "active_wake_words": [],
+                "max_active_wake_words": 0,
+                "area": "",
             },
             "mic": [
                 {
@@ -132,6 +135,7 @@ class WyomingServer:
             while True:
                 event = await self._read_event(reader)
                 if event is None:
+                    LOGGER.info("Wyoming client disconnected: %s", peer)
                     break
                 LOGGER.info("Wyoming event received: %s", event.get("type"))
                 if event.get("type") != "describe":
@@ -145,6 +149,8 @@ class WyomingServer:
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
+        except Exception:
+            LOGGER.exception("Unhandled Wyoming client error: %s", peer)
         finally:
             await self._stop_streaming()
             writer.close()
