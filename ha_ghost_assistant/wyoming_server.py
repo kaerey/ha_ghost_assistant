@@ -34,50 +34,21 @@ class WyomingInfo:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "satellite": {
-                "name": self.name,
-                "description": self.description,
-                "version": self.version,
-                "attribution": self.attribution,
-                "id": self.satellite_id,
-                "software": self.software,
-                "supports_trigger": self.supports_trigger,
-                "has_vad": self.has_vad,
-            },
-            "mic": {
-                "name": "Default Microphone",
-                "description": "Default system microphone",
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
+            "attribution": self.attribution,
+            "id": self.satellite_id,
+            "software": self.software,
+            "supports_trigger": self.supports_trigger,
+            "has_vad": self.has_vad,
+            "wake_words": [self.wake_name],
+            "audio": {
                 "rate": self.mic_rate,
-                "width": self.mic_width,
                 "channels": self.mic_channels,
-                "sample_rate": self.mic_rate,
-                "sample_width": self.mic_width,
-                "mic_format": {
-                    "rate": self.mic_rate,
-                    "width": self.mic_width,
-                    "channels": self.mic_channels,
-                },
+                "width": self.mic_width,
+                "format": "S16LE",
             },
-            "snd": {
-                "name": "Default Speaker",
-                "description": "Default system speaker",
-                "rate": self.snd_rate,
-                "width": self.snd_width,
-                "channels": self.snd_channels,
-                "sample_rate": self.snd_rate,
-                "sample_width": self.snd_width,
-                "snd_format": {
-                    "rate": self.snd_rate,
-                    "width": self.snd_width,
-                    "channels": self.snd_channels,
-                },
-            },
-            "wake": [
-                {
-                    "name": self.wake_name,
-                    "model": self.wake_model,
-                }
-            ],
         }
 
 
@@ -168,7 +139,10 @@ class WyomingServer:
     ) -> None:
         event_type = event.get("type")
         if event_type == "describe":
-            await self._send_event(writer, {"type": "info", "data": self._info.as_dict()})
+            LOGGER.info("Wyoming describe request: %s", event)
+            info_event = {"type": "info", "data": self._info.as_dict()}
+            LOGGER.info("Wyoming info response: %s", json.dumps(info_event))
+            await self._send_event(writer, info_event)
             return
         if event_type == "ping":
             await self._send_event(writer, {"type": "pong"})
@@ -282,6 +256,9 @@ class WyomingServer:
         line = await reader.readline()
         if not line:
             return None
+        LOGGER.debug("Wyoming raw event line: %s", line)
+        if b'"describe"' in line:
+            LOGGER.info("Wyoming raw describe request: %s", line)
         try:
             event = json.loads(line.decode("utf-8"))
         except json.JSONDecodeError:
