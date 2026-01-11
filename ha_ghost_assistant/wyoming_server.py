@@ -176,7 +176,7 @@ class WyomingServer:
                         self._client_connected.set()
                         self._run_satellite_ready = False
                 await self._handle_event(event, writer)
-        except asyncio.IncompleteReadError:
+        except (asyncio.IncompleteReadError, ConnectionResetError):
             LOGGER.info("Wyoming client disconnected: %s", peer)
         except asyncio.CancelledError:
             LOGGER.info("Wyoming client handler cancelled: %s", peer)
@@ -190,7 +190,10 @@ class WyomingServer:
             await self._stop_streaming()
             await self._playback.stop()
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except ConnectionResetError:
+                LOGGER.info("Wyoming client connection reset during close: %s", peer)
             if self._server_id == client_id:
                 self._server_id = None
                 self._server_writer = None
@@ -225,6 +228,7 @@ class WyomingServer:
                 int(rate) if rate is not None else 22050,
                 int(channels) if channels is not None else self._info.snd_channels,
             )
+            self._set_state("responding")
             return
         if event_type == "audio-chunk":
             payload = event.get("_payload")
@@ -233,6 +237,21 @@ class WyomingServer:
             return
         if event_type == "audio-stop":
             await self._playback.stop()
+            self._set_state("idle")
+            return
+        if event_type == "voice-stopped":
+            LOGGER.info("Wyoming voice stopped")
+            await self._stop_streaming()
+            return
+        if event_type == "transcript":
+            data = event.get("data")
+            LOGGER.info("Wyoming transcript received: %s", data)
+            self._set_state("thinking")
+            return
+        if event_type == "synthesize":
+            data = event.get("data")
+            LOGGER.info("Wyoming synthesize received: %s", data)
+            self._set_state("responding")
             return
         if event_type == "streaming-started":
             LOGGER.info("Wyoming streaming started")
