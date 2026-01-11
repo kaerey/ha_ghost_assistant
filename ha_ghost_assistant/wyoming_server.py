@@ -234,6 +234,7 @@ class WyomingServer:
             return
         if event_type == "audio-stop":
             await self._playback.stop()
+            self._set_state("idle")
             return
         if event_type == "voice-stopped":
             LOGGER.info("Wyoming voice stopped")
