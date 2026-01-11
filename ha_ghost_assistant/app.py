@@ -60,6 +60,7 @@ async def run(host: str, port: int) -> None:
         host=host,
         port=port,
         audio=audio,
+        playback=playback,
         info=info,
         on_state=renderer.set_state,
     )
@@ -96,7 +97,6 @@ async def run(host: str, port: int) -> None:
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
-                asyncio.create_task(playback.start()),
                 asyncio.create_task(renderer.run(stop_event)),
                 asyncio.create_task(wake_word.start()),
             ]

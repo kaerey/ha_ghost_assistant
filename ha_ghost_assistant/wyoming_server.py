@@ -13,6 +13,7 @@ from typing import Callable
 import numpy as np
 
 from ha_ghost_assistant.audio import AudioCapture
+from ha_ghost_assistant.playback import AudioPlayback
 
 LOGGER = logging.getLogger(__name__)
 PING_SEND_DELAY = 2.0
@@ -106,12 +107,14 @@ class WyomingServer:
         host: str,
         port: int,
         audio: AudioCapture,
+        playback: AudioPlayback,
         info: WyomingInfo | None = None,
         on_state: StateCallback | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._audio = audio
+        self._playback = playback
         self._info = info or WyomingInfo()
         self._on_state = on_state
         self._server: asyncio.AbstractServer | None = None
@@ -180,6 +183,7 @@ class WyomingServer:
             LOGGER.exception("Unhandled Wyoming client error: %s", peer)
         finally:
             await self._stop_streaming()
+            await self._playback.stop()
             writer.close()
             await writer.wait_closed()
             if self._server_id == client_id:
@@ -204,6 +208,26 @@ class WyomingServer:
             return
         if event_type == "pong":
             self._pong_event.set()
+            return
+        if event_type == "audio-start":
+            data = event.get("data")
+            rate = None
+            channels = None
+            if isinstance(data, dict):
+                rate = data.get("rate")
+                channels = data.get("channels")
+            await self._playback.start(
+                int(rate) if rate is not None else 22050,
+                int(channels) if channels is not None else self._info.snd_channels,
+            )
+            return
+        if event_type == "audio-chunk":
+            payload = event.get("_payload")
+            if isinstance(payload, (bytes, bytearray)):
+                self._playback.write(payload)
+            return
+        if event_type == "audio-stop":
+            await self._playback.stop()
             return
         if event_type == "run-satellite":
             LOGGER.info("Wyoming run-satellite received")
@@ -401,7 +425,7 @@ class WyomingServer:
                 LOGGER.warning("Incomplete Wyoming data payload read")
         if isinstance(payload_length, int) and payload_length > 0:
             try:
-                await reader.readexactly(payload_length)
+                event["_payload"] = await reader.readexactly(payload_length)
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Incomplete Wyoming payload read")
         return event
