@@ -84,6 +84,7 @@ class GLESRenderer:
         self._particle_vbo: int | None = None
         self._particle_trail_vbo: int | None = None
         self._frame_index: int = 0
+        self._responding_timeout: asyncio.Task[None] | None = None
 
     def set_density(self, density_1_to_10: int) -> None:
         self._density_1_to_10 = int(_clamp(float(density_1_to_10), 1, 10))
@@ -138,6 +139,9 @@ class GLESRenderer:
             pygame.quit()
             self._screen = None
             self._clock = None
+        if self._responding_timeout is not None:
+            self._responding_timeout.cancel()
+            self._responding_timeout = None
             LOGGER.info("OpenGL ES renderer stopped")
 
     def _handle_event(self, event: pygame.event.Event, stop_event: asyncio.Event) -> None:
@@ -215,6 +219,7 @@ class GLESRenderer:
         self._env_slow = (self._env_slow * 0.90) + (rms * 0.10)
         focus = 1.0 if self._state in ("listening", "thinking", "responding") else 0.0
         speak = 1.0 if self._state == "responding" else 0.0
+        skip_update = speak > 0.5 and (self._frame_index % 2 == 0)
 
         base = min(width, height) * 0.16
         pulse = (0.08 + 0.28 * self._env_fast + 0.12 * (self._env_fast**2)) if speak > 0 else (
@@ -226,7 +231,8 @@ class GLESRenderer:
         cx, cy = width * 0.5, height * 0.52
 
         field = self._ensure_particles(radius, cx, cy, speak)
-        self._update_particles(field, radius, cx, cy, dt, now)
+        if not skip_update:
+            self._update_particles(field, radius, cx, cy, dt * (2.0 if speak > 0.5 else 1.0), now)
 
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
@@ -273,25 +279,25 @@ class GLESRenderer:
 
         pos_loc = GL.glGetAttribLocation(self._particle_shader.program, "a_pos")
         GL.glEnableVertexAttribArray(pos_loc)
-        draw_trails = not (speak > 0.5 and (self._frame_index % 2 == 0))
+        draw_trails = speak <= 0.5
         if draw_trails:
             GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
             GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
             GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 1.1)
-            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.16)
+            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 1.0)
+            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.12)
             GL.glDrawArrays(GL.GL_LINES, 0, trail.shape[0])
 
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_vbo)
         GL.glBufferData(GL.GL_ARRAY_BUFFER, positions.nbytes, positions, GL.GL_DYNAMIC_DRAW)
         GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 2.8)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.78)
+        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 2.4)
+        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.72)
         GL.glDrawArrays(GL.GL_POINTS, 0, positions.shape[0])
 
     def _ensure_particles(self, radius: float, cx: float, cy: float, speak: float) -> _ParticleField:
         base_target = int(600 + (self._density_1_to_10 - 1) * (3600 / 9))
-        target = int(base_target * (0.62 if speak > 0.2 else 1.0))
+        target = int(base_target * (0.45 if speak > 0.2 else 1.0))
         if self._field is not None and self._field.positions.shape[0] == target:
             return self._field
 

@@ -131,6 +131,7 @@ class WyomingServer:
         self._ping_enabled = False
         self._pong_event = asyncio.Event()
         self._ping_task: asyncio.Task[None] | None = None
+        self._responding_timeout_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -145,6 +146,7 @@ class WyomingServer:
     async def stop(self) -> None:
         if self._server is None:
             return
+        self._cancel_responding_timeout()
         await self._stop_streaming()
         self._server.close()
         await self._server.wait_closed()
@@ -189,6 +191,7 @@ class WyomingServer:
             self._pending_stream = False
             await self._stop_streaming()
             await self._playback.stop()
+            self._cancel_responding_timeout()
             writer.close()
             try:
                 await writer.wait_closed()
@@ -218,6 +221,7 @@ class WyomingServer:
             self._pong_event.set()
             return
         if event_type == "audio-start":
+            self._cancel_responding_timeout()
             data = event.get("data")
             rate = None
             channels = None
@@ -238,10 +242,13 @@ class WyomingServer:
         if event_type == "audio-stop":
             await self._playback.stop()
             self._set_state("idle")
+            self._cancel_responding_timeout()
             return
         if event_type == "voice-stopped":
             LOGGER.info("Wyoming voice stopped")
             await self._stop_streaming()
+            self._set_state("idle")
+            self._cancel_responding_timeout()
             return
         if event_type == "transcript":
             data = event.get("data")
@@ -252,6 +259,7 @@ class WyomingServer:
             data = event.get("data")
             LOGGER.info("Wyoming synthesize received: %s", data)
             self._set_state("responding")
+            self._start_responding_timeout()
             return
         if event_type == "streaming-started":
             LOGGER.info("Wyoming streaming started")
@@ -380,6 +388,7 @@ class WyomingServer:
             await self._send_event(self._server_writer, {"type": "audio-stop"})
             await self._send_event(self._server_writer, {"type": "streaming-stopped"})
         self._set_state("idle")
+        self._cancel_responding_timeout()
 
     async def _stream_audio(self, writer: asyncio.StreamWriter) -> None:
         self._stop_stream.clear()
@@ -439,6 +448,7 @@ class WyomingServer:
             await self._send_event(writer, {"type": "audio-stop"})
             await self._send_event(writer, {"type": "streaming-stopped"})
         self._set_state("idle")
+        self._cancel_responding_timeout()
         self._stream_task = None
 
     def _set_state(self, state: str) -> None:
@@ -448,6 +458,27 @@ class WyomingServer:
         LOGGER.info("State transition: %s", state)
         if self._on_state is not None:
             self._on_state(state)
+
+    def _start_responding_timeout(self) -> None:
+        self._cancel_responding_timeout()
+        self._responding_timeout_task = asyncio.create_task(
+            self._responding_timeout()
+        )
+
+    def _cancel_responding_timeout(self) -> None:
+        if self._responding_timeout_task is None:
+            return
+        self._responding_timeout_task.cancel()
+        self._responding_timeout_task = None
+
+    async def _responding_timeout(self) -> None:
+        try:
+            await asyncio.sleep(2.5)
+        except asyncio.CancelledError:
+            return
+        if self._state == "responding":
+            LOGGER.warning("Responding timeout; forcing idle state")
+            self._set_state("idle")
 
     async def _send_event(
         self,
