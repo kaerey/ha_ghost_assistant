@@ -261,18 +261,27 @@ class WyomingServer:
             self._pending_trigger = name
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
-        # Satellite button press (push-to-talk). Do NOT send run-pipeline here.
-        # HA will start a pipeline and (typically) reply with run-satellite.
-        data = {"name": name}
-        await self._send_event(self._server_writer, {"type": "trigger", "data": data})
+        # Placeholder wake word fired (Enter key). Wyoming standard event is "detection".
+        await self._send_event(
+            self._server_writer, {"type": "detection", "data": {"name": name}}
+        )
+        run_pipeline = {
+            "type": "run-pipeline",
+            "data": {
+                "start_stage": "asr",
+                "end_stage": "tts",
+                "restart_on_end": False,
+                "snd_format": {
+                    "rate": 22050,
+                    "width": self._info.snd_width,
+                    "channels": self._info.snd_channels,
+                },
+                "wake_word_name": name,
+            },
+        }
+        await self._send_event(self._server_writer, run_pipeline)
         if start_stream:
-            if self._run_satellite_ready:
-                await self._start_streaming()
-            else:
-                self._pending_stream = True
-                LOGGER.debug(
-                    "Waiting for run-satellite before starting audio streaming"
-                )
+            await self._start_streaming()
 
     async def stop_streaming(self) -> None:
         await self._stop_streaming()
