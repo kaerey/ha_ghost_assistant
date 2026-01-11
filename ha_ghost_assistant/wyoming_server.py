@@ -265,6 +265,21 @@ class WyomingServer:
         await self._send_event(
             self._server_writer, {"type": "wake-word-detected", "data": data}
         )
+        run_pipeline = {
+            "type": "run-pipeline",
+            "data": {
+                "start_stage": "asr",
+                "end_stage": "tts",
+                "restart_on_end": False,
+                "snd_format": {
+                    "rate": 22050,
+                    "width": self._info.snd_width,
+                    "channels": self._info.snd_channels,
+                },
+                "wake_word_name": name,
+            },
+        }
+        await self._send_event(self._server_writer, run_pipeline)
         if start_stream:
             if self._run_satellite_ready:
                 await self._start_streaming()
