@@ -261,9 +261,9 @@ class WyomingServer:
             self._pending_trigger = name
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
-        data = {"name": name, "model": self._info.software}
+        # Placeholder wake word fired (Enter key). Wyoming standard event is "detection".
         await self._send_event(
-            self._server_writer, {"type": "wake-word-detected", "data": data}
+            self._server_writer, {"type": "detection", "data": {"name": name}}
         )
         run_pipeline = {
             "type": "run-pipeline",
@@ -281,13 +281,7 @@ class WyomingServer:
         }
         await self._send_event(self._server_writer, run_pipeline)
         if start_stream:
-            if self._run_satellite_ready:
-                await self._start_streaming()
-            else:
-                self._pending_stream = True
-                LOGGER.debug(
-                    "Waiting for run-satellite before starting audio streaming"
-                )
+            await self._start_streaming()
 
     async def stop_streaming(self) -> None:
         await self._stop_streaming()

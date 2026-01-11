@@ -8,7 +8,7 @@ Home Assistant Voice Assistant and Animation
 
 ### Push-to-talk
 * Press **Space** or **Enter** on the fullscreen window to trigger a push-to-talk session.
-* The app emits a `wake-word-detected` event and starts streaming microphone audio to Home Assistant.
+* The app emits a `trigger` event and starts streaming microphone audio to Home Assistant.
 
 ### Integration status
-The Wyoming Protocol server now responds to `describe`, `run-satellite`, and `pause-satellite` events, and streams microphone audio (`audio-start`, `audio-chunk`, `audio-stop`). Wake word detection is still stubbed, but hooks are in place to emit `wake-word-detected` for custom wake words.
+The Wyoming Protocol server now responds to `describe`, `run-satellite`, and `pause-satellite` events, and streams microphone audio (`audio-start`, `audio-chunk`, `audio-stop`). Wake word detection is still stubbed, but hooks are in place to emit `trigger` for custom wake words.
