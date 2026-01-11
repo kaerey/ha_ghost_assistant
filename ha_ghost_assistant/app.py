@@ -9,7 +9,7 @@ from typing import Iterable
 
 from ha_ghost_assistant.audio import AudioCapture
 from ha_ghost_assistant.playback import AudioPlayback
-from ha_ghost_assistant.renderer import FullscreenRenderer
+from ha_ghost_assistant.renderer import Renderer, build_renderer
 from ha_ghost_assistant.wake_word import WakeWordDetector
 from ha_ghost_assistant.wyoming_discovery import WyomingDiscovery
 from ha_ghost_assistant.wyoming_server import WyomingInfo, WyomingServer
@@ -22,7 +22,7 @@ def configure_logging() -> None:
 
 
 async def log_audio_levels(
-    stop_event: asyncio.Event, audio: AudioCapture, renderer: FullscreenRenderer
+    stop_event: asyncio.Event, audio: AudioCapture, renderer: Renderer
 ) -> None:
     while not stop_event.is_set():
         try:
@@ -54,7 +54,7 @@ async def run(host: str, port: int) -> None:
 
     audio = AudioCapture()
     playback = AudioPlayback()
-    renderer = FullscreenRenderer()
+    renderer = build_renderer()
     info = WyomingInfo()
     wyoming_server = WyomingServer(
         host=host,

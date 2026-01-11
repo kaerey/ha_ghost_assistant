@@ -4,9 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import random
 import time
-from typing import Callable
+from typing import Callable, Protocol
 
 import pygame
 
@@ -30,6 +31,28 @@ def _cheap_blur(src: pygame.Surface, factor: int = 4) -> pygame.Surface:
     sw, sh = max(1, w // factor), max(1, h // factor)
     small = pygame.transform.smoothscale(src, (sw, sh))
     return pygame.transform.smoothscale(small, (w, h))
+
+
+class Renderer(Protocol):
+    """Renderer protocol for swap-in visuals."""
+
+    def set_density(self, density_1_to_10: int) -> None: ...
+
+    def set_orbit(self, orbit_1_to_10: int) -> None: ...
+
+    def set_style(self, style: str) -> None: ...
+
+    async def run(self, stop_event: asyncio.Event) -> None: ...
+
+    def set_state(self, state: str) -> None: ...
+
+    def set_trigger(self, on_trigger: Callable[[], None] | None) -> None: ...
+
+    def set_stop(self, on_stop: Callable[[], None] | None) -> None: ...
+
+    def set_rms(self, rms: float) -> None: ...
+
+    def close(self) -> None: ...
 
 
 class FullscreenRenderer:
@@ -487,3 +510,12 @@ class FullscreenRenderer:
 
             pygame.draw.aaline(trail, col, (p["px"], p["py"]), (p["x"], p["y"]))
             pygame.draw.circle(trail, col, (int(p["x"]), int(p["y"])), size_i)
+
+
+def build_renderer() -> Renderer:
+    """Create the renderer implementation based on environment."""
+    if os.getenv("HA_GHOST_ASSISTANT_RENDERER", "gles").lower() == "pygame":
+        return FullscreenRenderer()
+    from ha_ghost_assistant.gles_renderer import GLESRenderer
+
+    return GLESRenderer()
