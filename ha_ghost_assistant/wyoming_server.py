@@ -197,7 +197,6 @@ class WyomingServer:
             await self._send_event(writer, info_event)
             return
         if event_type == "ping":
-            LOGGER.info("Wyoming ping received")
             await self._send_event(writer, {"type": "pong"})
             return
         if event_type == "pong":
@@ -363,7 +362,8 @@ class WyomingServer:
         if payload is not None:
             event = dict(event)
             event["payload_length"] = len(payload)
-        LOGGER.info("Wyoming event sent: %s", event.get("type"))
+        if event.get("type") != "pong":
+            LOGGER.info("Wyoming event sent: %s", event.get("type"))
         message = json.dumps(event).encode("utf-8") + b"\n"
         async with self._writer_lock:
             writer.write(message)
