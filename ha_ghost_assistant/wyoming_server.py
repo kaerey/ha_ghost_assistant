@@ -160,28 +160,28 @@ class WyomingServer:
             self._pending_trigger = None
             await self.trigger(name=pending)
         try:
-            while True:
+            while not reader.at_eof():
                 event = await self._read_event(reader)
                 if event is None:
-                    LOGGER.info("Wyoming client disconnected: %s", peer)
                     break
                 event_type = event.get("type")
                 if event_type != "ping":
                     LOGGER.info("Wyoming event received: %s", event_type)
-                if event.get("type") != "describe":
-                    if self._server_id is None:
+                if event_type != "describe":
+                    if self._server_id != client_id:
                         self._server_id = client_id
                         self._server_writer = writer
                         self._client_connected.set()
-                    elif self._server_id != client_id:
-                        LOGGER.info("Wyoming connection cancelled: %s", client_id)
-                        break
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
+        except asyncio.CancelledError:
+            LOGGER.exception("Wyoming client handler cancelled: %s", peer)
+            raise
         except Exception:
             LOGGER.exception("Unhandled Wyoming client error: %s", peer)
         finally:
+            LOGGER.info("Wyoming client disconnected: %s", peer)
             await self._stop_streaming()
             await self._playback.stop()
             writer.close()
@@ -299,7 +299,8 @@ class WyomingServer:
                     self._client_connected.clear()
                     self._disable_ping()
         except asyncio.CancelledError:
-            return
+            LOGGER.exception("Wyoming audio stream task cancelled")
+            raise
 
     async def _start_streaming(self) -> None:
         if self._server_writer is None:
@@ -370,7 +371,8 @@ class WyomingServer:
                     LOGGER.debug("Wyoming audio-chunk sent")
                     first_chunk = False
         except asyncio.CancelledError:
-            return
+            LOGGER.exception("Wyoming audio stream task cancelled")
+            raise
         if writer is not None and not writer.is_closing():
             await self._send_event(writer, {"type": "audio-stop"})
         self._set_state("idle")
