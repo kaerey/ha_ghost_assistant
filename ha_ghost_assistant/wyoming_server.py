@@ -125,7 +125,9 @@ class WyomingServer:
         self._stream_task: asyncio.Task[None] | None = None
         self._stop_stream = asyncio.Event()
         self._pending_trigger: str | None = None
+        self._pending_stream = False
         self._client_connected = asyncio.Event()
+        self._run_satellite_ready = False
         self._ping_enabled = False
         self._pong_event = asyncio.Event()
         self._ping_task: asyncio.Task[None] | None = None
@@ -172,6 +174,7 @@ class WyomingServer:
                         self._server_id = client_id
                         self._server_writer = writer
                         self._client_connected.set()
+                        self._run_satellite_ready = False
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
@@ -182,6 +185,8 @@ class WyomingServer:
             LOGGER.exception("Unhandled Wyoming client error: %s", peer)
         finally:
             LOGGER.info("Wyoming client disconnected: %s", peer)
+            self._run_satellite_ready = False
+            self._pending_stream = False
             await self._stop_streaming()
             await self._playback.stop()
             writer.close()
@@ -237,10 +242,14 @@ class WyomingServer:
             return
         if event_type == "run-satellite":
             LOGGER.info("Wyoming run-satellite received")
-            await self._start_streaming()
+            self._run_satellite_ready = True
+            if self._pending_stream:
+                self._pending_stream = False
+                await self._start_streaming()
             return
         if event_type == "pause-satellite":
             LOGGER.info("Wyoming pause-satellite received")
+            self._run_satellite_ready = False
             await self._stop_streaming()
             return
         LOGGER.warning("Unhandled Wyoming event: %s", event_type)
@@ -257,7 +266,13 @@ class WyomingServer:
             self._server_writer, {"type": "wake-word-detected", "data": data}
         )
         if start_stream:
-            LOGGER.debug("Waiting for run-satellite before starting audio streaming")
+            if self._run_satellite_ready:
+                await self._start_streaming()
+            else:
+                self._pending_stream = True
+                LOGGER.debug(
+                    "Waiting for run-satellite before starting audio streaming"
+                )
 
     async def stop_streaming(self) -> None:
         await self._stop_streaming()
