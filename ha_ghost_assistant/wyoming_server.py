@@ -87,7 +87,7 @@ class WyomingInfo:
                         "url": "https://github.com/kaerey/ha_ghost_assistant",
                     },
                     "snd_format": {
-                        "rate": 22050,
+                        "rate": self.snd_rate,
                         "width": self.snd_width,
                         "channels": self.snd_channels,
                     }
@@ -175,6 +175,7 @@ class WyomingServer:
                         self._server_writer = writer
                         self._client_connected.set()
                         self._run_satellite_ready = False
+                        self._enable_ping()
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
@@ -336,6 +337,15 @@ class WyomingServer:
         if self._server_writer is None:
             LOGGER.warning("No Wyoming client connected; cannot start streaming")
             return
+
+        if not self._run_satellite_ready:
+            LOGGER.info(
+                "Wyoming client not ready yet (waiting for run-satellite); deferring stream start"
+            )
+            self._pending_stream = True
+            self._set_state("idle")
+            return
+
         if self._stream_task is not None and not self._stream_task.done():
             return
         self._audio.clear_audio()
@@ -345,8 +355,10 @@ class WyomingServer:
         self._set_state("listening")
 
     async def _stop_streaming(self) -> None:
+        self._pending_stream = False
         if self._stream_task is None:
             return
+
         if self._stream_task.done():
             self._stream_task = None
             return
