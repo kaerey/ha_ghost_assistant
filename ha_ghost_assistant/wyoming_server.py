@@ -4,16 +4,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import socket
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+import numpy as np
+
 from ha_ghost_assistant.audio import AudioCapture
+from ha_ghost_assistant.playback import AudioPlayback
 
 LOGGER = logging.getLogger(__name__)
 PING_SEND_DELAY = 2.0
 PONG_TIMEOUT = 5.0
+SILENCE_THRESHOLD = float(os.getenv("HA_GHOST_ASSISTANT_SILENCE_THRESHOLD", "0.005"))
+SILENCE_TIMEOUT = float(os.getenv("HA_GHOST_ASSISTANT_SILENCE_TIMEOUT", "0"))
 
 
 @dataclass
@@ -40,18 +46,53 @@ class WyomingInfo:
             "name": self.name,
             "description": self.description,
             "version": self.version,
-            "attribution": self.attribution,
             "id": self.satellite_id,
             "software": self.software,
-            "supports_trigger": self.supports_trigger,
-            "has_vad": self.has_vad,
-            "wake_words": [self.wake_name],
-            "audio": {
-                "rate": self.mic_rate,
-                "channels": self.mic_channels,
-                "width": self.mic_width,
-                "format": "S16LE",
+            "satellite": {
+                # Required by Home Assistant wyoming parser
+                "name": self.name,
+                "installed": True,
+                "attribution": {
+                    "name": self.software,
+                    "url": "https://github.com/kaerey/ha_ghost_assistant",
+                },
+                # Satellite capabilities
+                "supports_trigger": self.supports_trigger,
+                "has_vad": self.has_vad,
+                "active_wake_words": [],
+                "max_active_wake_words": 0,
+                "area": "",
             },
+            "mic": [
+                {
+                    "name": f"{self.software}_mic",
+                    "installed": True,
+                    "attribution": {
+                        "name": self.software,
+                        "url": "https://github.com/kaerey/ha_ghost_assistant",
+                    },
+                    "mic_format": {
+                        "rate": self.mic_rate,
+                        "width": self.mic_width,
+                        "channels": self.mic_channels,
+                    }
+                }
+            ],
+            "snd": [
+                {
+                    "name": f"{self.software}_snd",
+                    "installed": True,
+                    "attribution": {
+                        "name": self.software,
+                        "url": "https://github.com/kaerey/ha_ghost_assistant",
+                    },
+                    "snd_format": {
+                        "rate": 22050,
+                        "width": self.snd_width,
+                        "channels": self.snd_channels,
+                    }
+                }
+            ],
         }
 
 
@@ -66,12 +107,14 @@ class WyomingServer:
         host: str,
         port: int,
         audio: AudioCapture,
+        playback: AudioPlayback,
         info: WyomingInfo | None = None,
         on_state: StateCallback | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._audio = audio
+        self._playback = playback
         self._info = info or WyomingInfo()
         self._on_state = on_state
         self._server: asyncio.AbstractServer | None = None
@@ -82,7 +125,9 @@ class WyomingServer:
         self._stream_task: asyncio.Task[None] | None = None
         self._stop_stream = asyncio.Event()
         self._pending_trigger: str | None = None
+        self._pending_stream = False
         self._client_connected = asyncio.Event()
+        self._run_satellite_ready = False
         self._ping_enabled = False
         self._pong_event = asyncio.Event()
         self._ping_task: asyncio.Task[None] | None = None
@@ -117,24 +162,33 @@ class WyomingServer:
             self._pending_trigger = None
             await self.trigger(name=pending)
         try:
-            while True:
+            while not reader.at_eof():
                 event = await self._read_event(reader)
                 if event is None:
                     break
-                LOGGER.info("Wyoming event received: %s", event.get("type"))
-                if event.get("type") != "describe":
-                    if self._server_id is None:
+                event_type = event.get("type")
+                if event_type != "ping":
+                    LOGGER.info("Wyoming event received: %s", event_type)
+                if event_type != "describe":
+                    if self._server_id != client_id:
                         self._server_id = client_id
                         self._server_writer = writer
                         self._client_connected.set()
-                    elif self._server_id != client_id:
-                        LOGGER.info("Wyoming connection cancelled: %s", client_id)
-                        break
+                        self._run_satellite_ready = False
                 await self._handle_event(event, writer)
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
+        except asyncio.CancelledError:
+            LOGGER.info("Wyoming client handler cancelled: %s", peer)
+            raise
+        except Exception:
+            LOGGER.exception("Unhandled Wyoming client error: %s", peer)
         finally:
+            LOGGER.info("Wyoming client disconnected: %s", peer)
+            self._run_satellite_ready = False
+            self._pending_stream = False
             await self._stop_streaming()
+            await self._playback.stop()
             writer.close()
             await writer.wait_closed()
             if self._server_id == client_id:
@@ -150,21 +204,52 @@ class WyomingServer:
         if event_type == "describe":
             LOGGER.info("Wyoming describe request: %s", event)
             info_event = {"type": "info", "data": self._info.as_dict()}
+            LOGGER.debug("Wyoming info data: %s", info_event["data"])
             LOGGER.info("Wyoming info response: %s", json.dumps(info_event))
             await self._send_event(writer, info_event)
             return
         if event_type == "ping":
             await self._send_event(writer, {"type": "pong"})
-            if not self._ping_enabled:
-                self._enable_ping()
             return
         if event_type == "pong":
             self._pong_event.set()
             return
+        if event_type == "audio-start":
+            data = event.get("data")
+            rate = None
+            channels = None
+            if isinstance(data, dict):
+                rate = data.get("rate")
+                channels = data.get("channels")
+            await self._playback.start(
+                int(rate) if rate is not None else 22050,
+                int(channels) if channels is not None else self._info.snd_channels,
+            )
+            return
+        if event_type == "audio-chunk":
+            payload = event.get("_payload")
+            if isinstance(payload, (bytes, bytearray)):
+                self._playback.write(payload)
+            return
+        if event_type == "audio-stop":
+            await self._playback.stop()
+            return
+        if event_type == "streaming-started":
+            LOGGER.info("Wyoming streaming started")
+            return
+        if event_type == "streaming-stopped":
+            LOGGER.info("Wyoming streaming stopped")
+            return
         if event_type == "run-satellite":
-            await self._start_streaming()
+            LOGGER.info("Wyoming run-satellite received")
+            self._run_satellite_ready = True
+            if self._pending_stream:
+                self._pending_stream = False
+                await self._start_streaming()
             return
         if event_type == "pause-satellite":
+            LOGGER.info("Wyoming pause-satellite received")
+            self._run_satellite_ready = False
             await self._stop_streaming()
             return
         LOGGER.warning("Unhandled Wyoming event: %s", event_type)
@@ -176,12 +261,36 @@ class WyomingServer:
             self._pending_trigger = name
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
-        data = {"name": name, "model": "ha_ghost_assistant"}
+        data = {"name": name, "model": self._info.software}
         await self._send_event(
             self._server_writer, {"type": "wake-word-detected", "data": data}
         )
+        run_pipeline = {
+            "type": "run-pipeline",
+            "data": {
+                "start_stage": "asr",
+                "end_stage": "tts",
+                "restart_on_end": False,
+                "snd_format": {
+                    "rate": 22050,
+                    "width": self._info.snd_width,
+                    "channels": self._info.snd_channels,
+                },
+                "wake_word_name": name,
+            },
+        }
+        await self._send_event(self._server_writer, run_pipeline)
         if start_stream:
-            await self._start_streaming()
+            if self._run_satellite_ready:
+                await self._start_streaming()
+            else:
+                self._pending_stream = True
+                LOGGER.debug(
+                    "Waiting for run-satellite before starting audio streaming"
+                )
+
+    async def stop_streaming(self) -> None:
+        await self._stop_streaming()
 
     async def wait_for_client(self, timeout: float | None = None) -> bool:
         try:
@@ -226,7 +335,8 @@ class WyomingServer:
                     self._client_connected.clear()
                     self._disable_ping()
         except asyncio.CancelledError:
-            return
+            LOGGER.exception("Wyoming ping task cancelled")
+            raise
 
     async def _start_streaming(self) -> None:
         if self._server_writer is None:
@@ -237,10 +347,14 @@ class WyomingServer:
         self._audio.clear_audio()
         self._stop_stream.clear()
         self._stream_task = asyncio.create_task(self._stream_audio(self._server_writer))
+        await self._send_event(self._server_writer, {"type": "streaming-started"})
         self._set_state("listening")
 
     async def _stop_streaming(self) -> None:
         if self._stream_task is None:
+            return
+        if self._stream_task.done():
+            self._stream_task = None
             return
         self._stop_stream.set()
         self._stream_task.cancel()
@@ -251,9 +365,11 @@ class WyomingServer:
         self._stream_task = None
         if self._server_writer is not None and not self._server_writer.is_closing():
             await self._send_event(self._server_writer, {"type": "audio-stop"})
+            await self._send_event(self._server_writer, {"type": "streaming-stopped"})
         self._set_state("idle")
 
     async def _stream_audio(self, writer: asyncio.StreamWriter) -> None:
+        self._stop_stream.clear()
         await self._send_event(
             writer,
             {
@@ -267,15 +383,50 @@ class WyomingServer:
         )
         LOGGER.debug("Wyoming audio streaming started")
         first_chunk = True
+        silence_duration = 0.0
         try:
             while not self._stop_stream.is_set():
                 chunk = await self._audio.next_chunk()
-                await self._send_event(writer, {"type": "audio-chunk"}, payload=chunk)
+                await self._send_event(
+                    writer,
+                    {
+                        "type": "audio-chunk",
+                        "data": {
+                            "rate": self._info.mic_rate,
+                            "width": self._info.mic_width,
+                            "channels": self._info.mic_channels,
+                        },
+                    },
+                    payload=chunk,
+                )
+                if SILENCE_TIMEOUT > 0:
+                    audio = (
+                        np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+                        / 32768.0
+                    )
+                    rms = float(np.sqrt(np.mean(np.square(audio))))
+                    chunk_duration = (
+                        len(chunk) / (self._info.mic_width * self._info.mic_channels)
+                    ) / self._info.mic_rate
+                    if rms < SILENCE_THRESHOLD:
+                        silence_duration += chunk_duration
+                        if silence_duration >= SILENCE_TIMEOUT:
+                            LOGGER.info("Silence detected; stopping audio stream")
+                            self._stop_stream.set()
+                            break
+                    else:
+                        silence_duration = 0.0
                 if first_chunk:
                     LOGGER.debug("Wyoming audio-chunk sent")
                     first_chunk = False
         except asyncio.CancelledError:
-            return
+            LOGGER.info("Wyoming audio stream task cancelled")
+            raise
+        if writer is not None and not writer.is_closing():
+            await self._send_event(writer, {"type": "audio-stop"})
+            await self._send_event(writer, {"type": "streaming-stopped"})
+        self._set_state("idle")
+        self._stream_task = None
 
     def _set_state(self, state: str) -> None:
         if state == self._state:
@@ -294,6 +445,8 @@ class WyomingServer:
         if payload is not None:
             event = dict(event)
             event["payload_length"] = len(payload)
+        if event.get("type") != "pong":
+            LOGGER.info("Wyoming event sent: %s", event.get("type"))
         message = json.dumps(event).encode("utf-8") + b"\n"
         async with self._writer_lock:
             writer.write(message)
@@ -319,12 +472,21 @@ class WyomingServer:
         payload_length = event.get("payload_length")
         if isinstance(data_length, int) and data_length > 0:
             try:
-                await reader.readexactly(data_length)
+                data_bytes = await reader.readexactly(data_length)
+                extra_data = json.loads(data_bytes.decode("utf-8"))
+                if isinstance(extra_data, dict):
+                    data = event.get("data")
+                    if not isinstance(data, dict):
+                        data = {}
+                    data.update(extra_data)
+                    event["data"] = data
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Incomplete Wyoming data payload read")
+            except json.JSONDecodeError:
+                LOGGER.warning("Failed to decode Wyoming data payload")
         if isinstance(payload_length, int) and payload_length > 0:
             try:
-                await reader.readexactly(payload_length)
+                event["_payload"] = await reader.readexactly(payload_length)
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Incomplete Wyoming payload read")
         return event

@@ -20,13 +20,18 @@ STATE_COLORS: dict[str, tuple[int, int, int]] = {
 class FullscreenRenderer:
     """Render a fullscreen placeholder window."""
 
-    def __init__(self, on_trigger: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        on_trigger: Callable[[], None] | None = None,
+        on_stop: Callable[[], None] | None = None,
+    ) -> None:
         self._screen: pygame.Surface | None = None
         self._font: pygame.font.Font | None = None
         self._rms: float = 0.0
         self._smoothed_rms: float = 0.0
         self._state: str = "idle"
         self._on_trigger = on_trigger
+        self._on_stop = on_stop
 
     async def run(self, stop_event: asyncio.Event) -> None:
         pygame.init()
@@ -53,6 +58,9 @@ class FullscreenRenderer:
     def set_trigger(self, on_trigger: Callable[[], None] | None) -> None:
         self._on_trigger = on_trigger
 
+    def set_stop(self, on_stop: Callable[[], None] | None) -> None:
+        self._on_stop = on_stop
+
     def set_rms(self, rms: float) -> None:
         self._rms = rms
 
@@ -73,10 +81,15 @@ class FullscreenRenderer:
         LOGGER.info("Keydown: %s", pygame.key.name(event.key))
         if event.key == pygame.K_ESCAPE:
             stop_event.set()
-        elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
-            self.set_state("listening")
-            if self._on_trigger is not None:
-                self._on_trigger()
+        elif event.key == pygame.K_RETURN:
+            if self._state == "idle":
+                self.set_state("listening")
+                if self._on_trigger is not None:
+                    self._on_trigger()
+            elif self._state == "listening":
+                self.set_state("idle")
+                if self._on_stop is not None:
+                    self._on_stop()
         elif event.key == pygame.K_w:
             self.set_state("listening")
         elif event.key == pygame.K_l:

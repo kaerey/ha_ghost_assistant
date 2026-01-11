@@ -60,6 +60,7 @@ async def run(host: str, port: int) -> None:
         host=host,
         port=port,
         audio=audio,
+        playback=playback,
         info=info,
         on_state=renderer.set_state,
     )
@@ -68,6 +69,7 @@ async def run(host: str, port: int) -> None:
         on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name))
     )
     renderer.set_trigger(lambda: loop.create_task(wyoming_server.trigger()))
+    renderer.set_stop(lambda: loop.create_task(wyoming_server.stop_streaming()))
 
     tasks: list[asyncio.Task[None]] = []
     try:
@@ -82,11 +84,19 @@ async def run(host: str, port: int) -> None:
         )
         if wait_for_ha:
             logger.info("Waiting for Wyoming client connection...")
-            await wyoming_server.wait_for_client()
+            wait_task = asyncio.create_task(wyoming_server.wait_for_client())
+            stop_task = asyncio.create_task(stop_event.wait())
+            done, pending = await asyncio.wait(
+                {wait_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await _gather_safely(pending)
+            if stop_task in done:
+                return
         tasks.extend(
             [
                 asyncio.create_task(log_audio_levels(stop_event, audio, renderer)),
-                asyncio.create_task(playback.start()),
                 asyncio.create_task(renderer.run(stop_event)),
                 asyncio.create_task(wake_word.start()),
             ]
