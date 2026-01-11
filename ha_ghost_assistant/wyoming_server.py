@@ -262,9 +262,7 @@ class WyomingServer:
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
         data = {"name": name, "model": self._info.software}
-        await self._send_event(
-            self._server_writer, {"type": "wake-word-detected", "data": data}
-        )
+        await self._send_event(self._server_writer, {"type": "trigger", "data": data})
         run_pipeline = {
             "type": "run-pipeline",
             "data": {
