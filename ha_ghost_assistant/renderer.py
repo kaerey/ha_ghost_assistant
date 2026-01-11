@@ -191,9 +191,9 @@ class FullscreenRenderer:
         if self._fx is None or self._fx.get_size() != (w, h):
             self._fx = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
 
-        # Background: deep space with slow glow blobs
+        # Background: deep space with subtle center glow
         self._screen.fill((0, 0, 0))
-        self._draw_soft_bg(self._screen, w, h, t)
+        self._draw_soft_bg(self._screen, w, h)
 
         # Fade persistent trail (filaments/tails)
         # Lower subtract => longer persistence (more "smokey")
@@ -234,14 +234,11 @@ class FullscreenRenderer:
         pygame.display.flip()
 
     # ----------------- Background / glow helpers -----------------
-    def _draw_soft_bg(self, surf: pygame.Surface, w: int, h: int, t: float) -> None:
-        for i in range(3):
-            ph = t * (0.12 + i * 0.05)
-            x = int(w * (0.35 + 0.35 * math.sin(ph + i * 2.1)))
-            y = int(h * (0.30 + 0.25 * math.cos(ph * 1.1 + i * 1.7)))
-            rr = int(min(w, h) * (0.22 + 0.06 * math.sin(ph * 1.4 + i)))
-            g = self._radial_glow(rr, (176, 108, 255), alpha=45)
-            surf.blit(g, g.get_rect(center=(x, y)), special_flags=pygame.BLEND_ADD)
+    def _draw_soft_bg(self, surf: pygame.Surface, w: int, h: int) -> None:
+        # Subtle, centered haze only (avoid large floating blobs).
+        rr = int(min(w, h) * 0.45)
+        g = self._radial_glow(rr, (90, 30, 130), alpha=18)
+        surf.blit(g, g.get_rect(center=(w // 2, h // 2)), special_flags=pygame.BLEND_ADD)
 
     def _radial_glow(self, radius: int, color: tuple[int, int, int], alpha: int = 120) -> pygame.Surface:
         # Simple cache key
