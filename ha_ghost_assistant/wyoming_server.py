@@ -179,7 +179,7 @@ class WyomingServer:
         except asyncio.IncompleteReadError:
             LOGGER.info("Wyoming client disconnected: %s", peer)
         except asyncio.CancelledError:
-            LOGGER.exception("Wyoming client handler cancelled: %s", peer)
+            LOGGER.info("Wyoming client handler cancelled: %s", peer)
             raise
         except Exception:
             LOGGER.exception("Unhandled Wyoming client error: %s", peer)
@@ -405,7 +405,7 @@ class WyomingServer:
                     LOGGER.debug("Wyoming audio-chunk sent")
                     first_chunk = False
         except asyncio.CancelledError:
-            LOGGER.exception("Wyoming audio stream task cancelled")
+            LOGGER.info("Wyoming audio stream task cancelled")
             raise
         if writer is not None and not writer.is_closing():
             await self._send_event(writer, {"type": "audio-stop"})
