@@ -176,7 +176,7 @@ class WyomingServer:
                         self._client_connected.set()
                         self._run_satellite_ready = False
                 await self._handle_event(event, writer)
-        except asyncio.IncompleteReadError:
+        except (asyncio.IncompleteReadError, ConnectionResetError):
             LOGGER.info("Wyoming client disconnected: %s", peer)
         except asyncio.CancelledError:
             LOGGER.info("Wyoming client handler cancelled: %s", peer)
@@ -190,7 +190,10 @@ class WyomingServer:
             await self._stop_streaming()
             await self._playback.stop()
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except ConnectionResetError:
+                LOGGER.info("Wyoming client connection reset during close: %s", peer)
             if self._server_id == client_id:
                 self._server_id = None
                 self._server_writer = None
