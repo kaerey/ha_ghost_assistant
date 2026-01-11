@@ -246,12 +246,23 @@ class WyomingServer:
             self._pending_trigger = name
             LOGGER.info("Queued trigger '%s' until a Wyoming client connects", name)
             return
-        data = {"name": name, "model": "ha_ghost_assistant"}
-        await self._send_event(
-            self._server_writer, {"type": "wake-word-detected", "data": data}
-        )
+        run_pipeline = {
+            "type": "run-pipeline",
+            "data": {
+                "start_stage": "asr",
+                "end_stage": "tts",
+                "restart_on_end": False,
+                "snd_format": {
+                    "rate": 22050,
+                    "width": self._info.snd_width,
+                    "channels": self._info.snd_channels,
+                },
+                "wake_word_name": name,
+            },
+        }
+        await self._send_event(self._server_writer, run_pipeline)
         if start_stream:
-            await self._start_streaming()
+            LOGGER.debug("Waiting for run-satellite before starting audio streaming")
 
     async def stop_streaming(self) -> None:
         await self._stop_streaming()
@@ -299,7 +310,7 @@ class WyomingServer:
                     self._client_connected.clear()
                     self._disable_ping()
         except asyncio.CancelledError:
-            LOGGER.exception("Wyoming audio stream task cancelled")
+            LOGGER.exception("Wyoming ping task cancelled")
             raise
 
     async def _start_streaming(self) -> None:
