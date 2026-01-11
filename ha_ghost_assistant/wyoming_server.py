@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import socket
 import time
 from dataclasses import dataclass, field
@@ -16,8 +17,8 @@ from ha_ghost_assistant.audio import AudioCapture
 LOGGER = logging.getLogger(__name__)
 PING_SEND_DELAY = 2.0
 PONG_TIMEOUT = 5.0
-SILENCE_THRESHOLD = 0.01
-SILENCE_TIMEOUT = 1.0
+SILENCE_THRESHOLD = float(os.getenv("HA_GHOST_ASSISTANT_SILENCE_THRESHOLD", "0.005"))
+SILENCE_TIMEOUT = float(os.getenv("HA_GHOST_ASSISTANT_SILENCE_TIMEOUT", "3.0"))
 
 
 @dataclass
@@ -161,7 +162,9 @@ class WyomingServer:
                 if event is None:
                     LOGGER.info("Wyoming client disconnected: %s", peer)
                     break
-                LOGGER.info("Wyoming event received: %s", event.get("type"))
+                event_type = event.get("type")
+                if event_type != "ping":
+                    LOGGER.info("Wyoming event received: %s", event_type)
                 if event.get("type") != "describe":
                     if self._server_id is None:
                         self._server_id = client_id
@@ -322,19 +325,23 @@ class WyomingServer:
             while not self._stop_stream.is_set():
                 chunk = await self._audio.next_chunk()
                 await self._send_event(writer, {"type": "audio-chunk"}, payload=chunk)
-                audio = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
-                rms = float(np.sqrt(np.mean(np.square(audio))))
-                chunk_duration = (
-                    len(chunk) / (self._info.mic_width * self._info.mic_channels)
-                ) / self._info.mic_rate
-                if rms < SILENCE_THRESHOLD:
-                    silence_duration += chunk_duration
-                    if silence_duration >= SILENCE_TIMEOUT:
-                        LOGGER.info("Silence detected; stopping audio stream")
-                        self._stop_stream.set()
-                        break
-                else:
-                    silence_duration = 0.0
+                if SILENCE_TIMEOUT > 0:
+                    audio = (
+                        np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+                        / 32768.0
+                    )
+                    rms = float(np.sqrt(np.mean(np.square(audio))))
+                    chunk_duration = (
+                        len(chunk) / (self._info.mic_width * self._info.mic_channels)
+                    ) / self._info.mic_rate
+                    if rms < SILENCE_THRESHOLD:
+                        silence_duration += chunk_duration
+                        if silence_duration >= SILENCE_TIMEOUT:
+                            LOGGER.info("Silence detected; stopping audio stream")
+                            self._stop_stream.set()
+                            break
+                    else:
+                        silence_duration = 0.0
                 if first_chunk:
                     LOGGER.debug("Wyoming audio-chunk sent")
                     first_chunk = False
