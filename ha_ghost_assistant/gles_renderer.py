@@ -83,6 +83,7 @@ class GLESRenderer:
         self._quad_vbo: int | None = None
         self._particle_vbo: int | None = None
         self._particle_trail_vbo: int | None = None
+        self._frame_index: int = 0
 
     def set_density(self, density_1_to_10: int) -> None:
         self._density_1_to_10 = int(_clamp(float(density_1_to_10), 1, 10))
@@ -157,6 +158,10 @@ class GLESRenderer:
                 self.set_state("idle")
                 if self._on_stop is not None:
                     self._on_stop()
+            else:
+                self.set_state("idle")
+                if self._on_stop is not None:
+                    self._on_stop()
         elif event.key == pygame.K_w:
             self.set_state("listening")
         elif event.key == pygame.K_l:
@@ -203,6 +208,7 @@ class GLESRenderer:
         width, height = self._screen.get_size()
         now = time.perf_counter() - self._t0
         dt = self._clock.tick(60) / 1000.0
+        self._frame_index += 1
 
         rms = _clamp(self._rms, 0.0, 1.0)
         self._env_fast = (self._env_fast * 0.62) + (rms * 0.38)
@@ -219,14 +225,14 @@ class GLESRenderer:
 
         cx, cy = width * 0.5, height * 0.52
 
-        field = self._ensure_particles(radius, cx, cy)
+        field = self._ensure_particles(radius, cx, cy, speak)
         self._update_particles(field, radius, cx, cy, dt, now)
 
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 
         self._draw_background(width, height, radius, focus, speak, now)
-        self._draw_particles(field, width, height, radius)
+        self._draw_particles(field, width, height, radius, speak)
 
         pygame.display.flip()
 
@@ -251,7 +257,9 @@ class GLESRenderer:
 
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
 
-    def _draw_particles(self, field: _ParticleField, width: int, height: int, radius: float) -> None:
+    def _draw_particles(
+        self, field: _ParticleField, width: int, height: int, radius: float, speak: float
+    ) -> None:
         if self._particle_shader is None or self._particle_vbo is None or self._particle_trail_vbo is None:
             return
         self._particle_shader.use()
@@ -263,24 +271,27 @@ class GLESRenderer:
         prev = field.previous.astype(np.float32)
         trail = np.hstack([prev, positions]).reshape(-1, 2)
 
-        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
-        GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
         pos_loc = GL.glGetAttribLocation(self._particle_shader.program, "a_pos")
         GL.glEnableVertexAttribArray(pos_loc)
-        GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 1.2)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.22)
-        GL.glDrawArrays(GL.GL_LINES, 0, trail.shape[0])
+        draw_trails = not (speak > 0.5 and (self._frame_index % 2 == 0))
+        if draw_trails:
+            GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
+            GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
+            GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
+            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 1.1)
+            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.16)
+            GL.glDrawArrays(GL.GL_LINES, 0, trail.shape[0])
 
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_vbo)
         GL.glBufferData(GL.GL_ARRAY_BUFFER, positions.nbytes, positions, GL.GL_DYNAMIC_DRAW)
         GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 3.2)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.85)
+        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 2.8)
+        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.78)
         GL.glDrawArrays(GL.GL_POINTS, 0, positions.shape[0])
 
-    def _ensure_particles(self, radius: float, cx: float, cy: float) -> _ParticleField:
-        target = int(600 + (self._density_1_to_10 - 1) * (3600 / 9))
+    def _ensure_particles(self, radius: float, cx: float, cy: float, speak: float) -> _ParticleField:
+        base_target = int(600 + (self._density_1_to_10 - 1) * (3600 / 9))
+        target = int(base_target * (0.62 if speak > 0.2 else 1.0))
         if self._field is not None and self._field.positions.shape[0] == target:
             return self._field
 
