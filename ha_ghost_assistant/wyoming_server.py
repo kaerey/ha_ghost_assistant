@@ -225,6 +225,7 @@ class WyomingServer:
                 int(rate) if rate is not None else 22050,
                 int(channels) if channels is not None else self._info.snd_channels,
             )
+            self._set_state("responding")
             return
         if event_type == "audio-chunk":
             payload = event.get("_payload")
@@ -233,6 +234,20 @@ class WyomingServer:
             return
         if event_type == "audio-stop":
             await self._playback.stop()
+            return
+        if event_type == "voice-stopped":
+            LOGGER.info("Wyoming voice stopped")
+            await self._stop_streaming()
+            return
+        if event_type == "transcript":
+            data = event.get("data")
+            LOGGER.info("Wyoming transcript received: %s", data)
+            self._set_state("thinking")
+            return
+        if event_type == "synthesize":
+            data = event.get("data")
+            LOGGER.info("Wyoming synthesize received: %s", data)
+            self._set_state("responding")
             return
         if event_type == "streaming-started":
             LOGGER.info("Wyoming streaming started")
