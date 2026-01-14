@@ -40,6 +40,8 @@ class WyomingInfo:
     has_vad: bool = False
     wake_name: str = "push_to_talk"
     wake_model: str = "ha_ghost_assistant"
+    active_wake_words: list[str] = field(default_factory=list)
+    max_active_wake_words: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -59,8 +61,8 @@ class WyomingInfo:
                 # Satellite capabilities
                 "supports_trigger": self.supports_trigger,
                 "has_vad": self.has_vad,
-                "active_wake_words": [],
-                "max_active_wake_words": 0,
+                "active_wake_words": self.active_wake_words,
+                "max_active_wake_words": self.max_active_wake_words,
                 "area": "",
             },
             "mic": [

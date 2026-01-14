@@ -26,6 +26,7 @@ class AudioCapture:
         self._raw_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=20)
         self._level_queue: asyncio.Queue[AudioLevel] = asyncio.Queue()
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=40)
+        self._consumer_queues: list[asyncio.Queue[bytes]] = []
         self._stream: sd.InputStream | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._processor_task: asyncio.Task[None] | None = None
@@ -56,6 +57,15 @@ class AudioCapture:
     async def next_chunk(self) -> bytes:
         return await self._audio_queue.get()
 
+    def create_audio_queue(self, maxsize: int = 40) -> asyncio.Queue[bytes]:
+        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=maxsize)
+        self._consumer_queues.append(queue)
+        return queue
+
+    def remove_audio_queue(self, queue: asyncio.Queue[bytes]) -> None:
+        if queue in self._consumer_queues:
+            self._consumer_queues.remove(queue)
+
     def clear_audio(self) -> None:
         while not self._audio_queue.empty():
             try:
@@ -76,13 +86,20 @@ class AudioCapture:
         self._enqueue_audio(data)
 
     def _enqueue_audio(self, data: np.ndarray) -> None:
-        if self._audio_queue.full():
+        payload = data.copy().tobytes()
+        self._put_queue(self._audio_queue, payload)
+        for queue in list(self._consumer_queues):
+            self._put_queue(queue, payload)
+
+    @staticmethod
+    def _put_queue(queue: asyncio.Queue[bytes], payload: bytes) -> None:
+        if queue.full():
             try:
-                self._audio_queue.get_nowait()
+                queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
         try:
-            self._audio_queue.put_nowait(data.copy().tobytes())
+            queue.put_nowait(payload)
         except asyncio.QueueFull:
             return
 
