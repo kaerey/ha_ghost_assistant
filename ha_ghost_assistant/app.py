@@ -66,8 +66,14 @@ async def run(host: str, port: int) -> None:
     )
     discovery = WyomingDiscovery(host=host, port=port, info=info)
     wake_word = WakeWordDetector(
-        on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name))
+        audio=audio,
+        on_detected=lambda name: loop.create_task(wyoming_server.trigger(name=name)),
     )
+    if wake_word.is_configured():
+        info.wake_name = wake_word.wake_word_name()
+        info.wake_model = wake_word.wake_word_model()
+        info.active_wake_words = [wake_word.wake_word_name()]
+        info.max_active_wake_words = 1
     renderer.set_trigger(lambda: loop.create_task(wyoming_server.trigger()))
     renderer.set_stop(lambda: loop.create_task(wyoming_server.stop_streaming()))
 
