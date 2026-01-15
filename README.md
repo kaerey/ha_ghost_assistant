@@ -21,5 +21,11 @@ Home Assistant Voice Assistant and Animation
   * `HA_GHOST_ASSISTANT_WAKE_WORD_COOLDOWN` (default `2.0` seconds)
   * `HA_GHOST_ASSISTANT_WAKE_WORD=0` to disable wake word detection.
 
+### Training a custom "Samantha" model
+This repository does not include training scripts. Use openWakeWord's training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file. A typical workflow is:
+1. Record short wake-word utterances ("Samantha") and background/negative examples at 16 kHz mono.
+2. Follow the openWakeWord training guide to train/export a custom model (see https://github.com/dscripka/openWakeWord).
+3. Copy the exported `samantha.onnx` to the device running this app and set `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` to its path.
+
 ### Integration status
 The Wyoming Protocol server responds to `describe`, `run-satellite`, and `pause-satellite` events, and streams microphone audio (`audio-start`, `audio-chunk`, `audio-stop`). Wake word detection uses openWakeWord when configured, and the Enter key remains a fallback trigger.
