@@ -2,15 +2,47 @@
 Home Assistant Voice Assistant and Animation
 
 ## Installation
-1. Install Python 3.11+ and create a virtual environment.
-2. Install dependencies:
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-3. Install the package:
-   ```bash
-   python -m pip install -e .
-   ```
+These steps assume you can copy/paste commands. Use the section for your operating system.
+
+### 1) Install Python 3.11+
+* **Windows/macOS/Linux:** Download and install Python 3.11+ from https://www.python.org/downloads/
+* **Linux package manager:** If you already have Python 3.11+ installed, you can skip this.
+
+### 2) Create and activate a virtual environment
+Pick **one** of the following (based on your OS). Run these commands in the repo folder.
+
+**macOS / Linux**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+```
+
+**Windows (PowerShell)**
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+**Windows (Command Prompt)**
+```cmd
+py -3.11 -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+```
+
+> **Tip:** If the `activate` command fails on Windows, reopen the terminal and try again. You can also run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` in PowerShell once to allow script activation.
+
+### 3) Install dependencies
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 4) Install the package (editable)
+```bash
+python -m pip install -e .
+```
 
 > **Note:** `sounddevice` requires system audio libraries (for example, PortAudio on Linux). Ensure your OS audio stack is installed before running the app.
 
@@ -42,10 +74,13 @@ python -m ha_ghost_assistant
   * `HA_GHOST_ASSISTANT_WAKE_WORD=0` to disable wake word detection.
 
 ### Training a custom "Samantha" model
-This repository does not include training scripts. Use openWakeWord's training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file if you want to override the bundled model. A typical workflow is:
+This repository does not include training scripts. Use the openWakeWord training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file if you want to override the bundled model. A typical workflow is:
 1. Record short wake-word utterances ("Samantha") and background/negative examples at 16 kHz mono.
 2. Follow the openWakeWord training guide to train/export a custom model (see https://github.com/dscripka/openWakeWord and https://github.com/dscripka/openWakeWord/tree/main/docs).
 3. Copy the exported `samantha.onnx` to the device running this app and set `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` to its path.
+
+You can also use the provided Google Colab notebook to train a model:
+https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing#scrollTo=-Q9wEuRdwY_E
 
 ### Integration status
 The Wyoming Protocol server responds to `describe`, `run-satellite`, and `pause-satellite` events, and streams microphone audio (`audio-start`, `audio-chunk`, `audio-stop`). Wake word detection uses openWakeWord when configured, and the Enter key remains a fallback trigger.
