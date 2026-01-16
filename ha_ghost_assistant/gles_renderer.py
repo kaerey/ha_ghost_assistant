@@ -228,7 +228,7 @@ class GLESRenderer:
         radius = base * (1.0 + 0.08 * focus + 0.10 * speak + pulse)
         radius = float(_clamp(radius, 40.0, min(width, height) * 0.33))
 
-        cx, cy = width * 0.5, height * 0.52
+        cx, cy = width * 0.5, height * 0.5
 
         field = self._ensure_particles(radius, cx, cy, speak)
         if not skip_update:
@@ -237,7 +237,7 @@ class GLESRenderer:
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 
-        self._draw_background(width, height, radius, focus, speak, now)
+        # Solid black background; glow/haze disabled.
         self._draw_particles(field, width, height, radius, speak)
 
         pygame.display.flip()
@@ -254,7 +254,7 @@ class GLESRenderer:
         GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
 
         GL.glUniform2f(GL.glGetUniformLocation(self._bg_shader.program, "u_resolution"), width, height)
-        GL.glUniform2f(GL.glGetUniformLocation(self._bg_shader.program, "u_center"), width * 0.5, height * 0.52)
+        GL.glUniform2f(GL.glGetUniformLocation(self._bg_shader.program, "u_center"), width * 0.5, height * 0.5)
         GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_radius"), radius)
         GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_focus"), focus)
         GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_speak"), speak)
@@ -273,14 +273,14 @@ class GLESRenderer:
         GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_radius"), radius)
         GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_env"), self._env_fast)
 
-        positions = field.positions.astype(np.float32)
-        prev = field.previous.astype(np.float32)
-        trail = np.hstack([prev, positions]).reshape(-1, 2)
+        positions = field.positions
+        prev = field.previous
 
         pos_loc = GL.glGetAttribLocation(self._particle_shader.program, "a_pos")
         GL.glEnableVertexAttribArray(pos_loc)
         draw_trails = speak <= 0.5
         if draw_trails:
+            trail = np.hstack([prev, positions]).reshape(-1, 2)
             GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
             GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
             GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
@@ -297,7 +297,13 @@ class GLESRenderer:
 
     def _ensure_particles(self, radius: float, cx: float, cy: float, speak: float) -> _ParticleField:
         base_target = int(600 + (self._density_1_to_10 - 1) * (3600 / 9))
-        target = int(base_target * (0.45 if speak > 0.2 else 1.0))
+        if speak > 0.5:
+            target_scale = 0.25
+        elif speak > 0.2:
+            target_scale = 0.55
+        else:
+            target_scale = 1.0
+        target = max(200, int(base_target * target_scale))
         if self._field is not None and self._field.positions.shape[0] == target:
             return self._field
 
@@ -308,7 +314,7 @@ class GLESRenderer:
         rr = radius * np.random.uniform(inner, outer, target).astype(np.float32)
         x = cx + np.cos(ang) * rr
         y = cy + np.sin(ang) * rr
-        positions = np.stack([x, y], axis=1)
+        positions = np.stack([x, y], axis=1).astype(np.float32)
         previous = positions.copy()
         seeds = np.random.uniform(0.0, 1000.0, target).astype(np.float32)
         ages = np.random.uniform(0.0, 3.0, target).astype(np.float32)

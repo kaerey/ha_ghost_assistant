@@ -190,7 +190,7 @@ class FullscreenRenderer:
         t = time.perf_counter() - self._t0
 
         w, h = self._screen.get_size()
-        cx, cy = w // 2, int(h // 2 + h * 0.02)
+        cx, cy = w // 2, h // 2
 
         # Audio envelope (fast + smoothed)
         rms = _clamp(self._rms, 0.0, 1.0)
@@ -214,9 +214,8 @@ class FullscreenRenderer:
         if self._fx is None or self._fx.get_size() != (w, h):
             self._fx = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
 
-        # Background: deep space with subtle center glow
+        # Background: solid black
         self._screen.fill((0, 0, 0))
-        self._draw_soft_bg(self._screen, w, h)
 
         # Fade persistent trail (filaments/tails)
         # Lower subtract => longer persistence (more "smokey")
