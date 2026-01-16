@@ -1,5 +1,24 @@
 # ha_ghost_assistant
-Home Assistant Voice Assistant and Animation 
+Home Assistant Voice Assistant and Animation
+
+## Installation
+1. Install Python 3.11+ and create a virtual environment.
+2. Install dependencies:
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+3. Install the package:
+   ```bash
+   python -m pip install -e .
+   ```
+
+> **Note:** `sounddevice` requires system audio libraries (for example, PortAudio on Linux). Ensure your OS audio stack is installed before running the app.
+
+## Usage
+Run the assistant:
+```bash
+python -m ha_ghost_assistant
+```
 
 ## Home Assistant Wyoming integration
 1. In Home Assistant, add the **Wyoming Protocol** integration.
@@ -24,7 +43,7 @@ Home Assistant Voice Assistant and Animation
 ### Training a custom "Samantha" model
 This repository does not include training scripts. Use openWakeWord's training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file. A typical workflow is:
 1. Record short wake-word utterances ("Samantha") and background/negative examples at 16 kHz mono.
-2. Follow the openWakeWord training guide to train/export a custom model (see https://github.com/dscripka/openWakeWord).
+2. Follow the openWakeWord training guide to train/export a custom model (see https://github.com/dscripka/openWakeWord and https://github.com/dscripka/openWakeWord/tree/main/docs).
 3. Copy the exported `samantha.onnx` to the device running this app and set `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` to its path.
 
 ### Integration status
