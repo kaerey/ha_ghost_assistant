@@ -26,11 +26,14 @@ class _ParticleField:
     seeds: np.ndarray
     ages: np.ndarray
     life: np.ndarray
+    trail: np.ndarray
 
 
 class _ShaderProgram:
     def __init__(self, vertex_src: str, fragment_src: str) -> None:
         self.program = GL.glCreateProgram()
+        self._uniform_locs: dict[str, int] = {}
+        self._attrib_locs: dict[str, int] = {}
         vertex = self._compile(GL.GL_VERTEX_SHADER, vertex_src)
         fragment = self._compile(GL.GL_FRAGMENT_SHADER, fragment_src)
         GL.glAttachShader(self.program, vertex)
@@ -56,6 +59,24 @@ class _ShaderProgram:
 
     def use(self) -> None:
         GL.glUseProgram(self.program)
+
+    def uniform(self, name: str) -> int:
+        """Cached glGetUniformLocation."""
+        loc = self._uniform_locs.get(name)
+        if loc is not None:
+            return loc
+        loc = GL.glGetUniformLocation(self.program, name)
+        self._uniform_locs[name] = loc
+        return loc
+
+    def attrib(self, name: str) -> int:
+        """Cached glGetAttribLocation."""
+        loc = self._attrib_locs.get(name)
+        if loc is not None:
+            return loc
+        loc = GL.glGetAttribLocation(self.program, name)
+        self._attrib_locs[name] = loc
+        return loc
 
 
 class GLESRenderer:
@@ -83,6 +104,8 @@ class GLESRenderer:
         self._quad_vbo: int | None = None
         self._particle_vbo: int | None = None
         self._particle_trail_vbo: int | None = None
+        self._bg_a_pos: int | None = None
+        self._p_a_pos: int | None = None
         self._frame_index: int = 0
         self._responding_timeout: asyncio.Task[None] | None = None
 
@@ -206,6 +229,11 @@ class GLESRenderer:
         self._particle_vbo = GL.glGenBuffers(1)
         self._particle_trail_vbo = GL.glGenBuffers(1)
 
+        if self._bg_shader is not None:
+            self._bg_a_pos = self._bg_shader.attrib("a_pos")
+        if self._particle_shader is not None:
+            self._p_a_pos = self._particle_shader.attrib("a_pos")
+
     def _draw_frame(self) -> None:
         if self._screen is None or self._clock is None:
             return
@@ -251,17 +279,17 @@ class GLESRenderer:
             return
         self._bg_shader.use()
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._quad_vbo)
-        pos_loc = GL.glGetAttribLocation(self._bg_shader.program, "a_pos")
+        pos_loc = self._bg_a_pos if self._bg_a_pos is not None else self._bg_shader.attrib("a_pos")
         GL.glEnableVertexAttribArray(pos_loc)
         GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
 
-        GL.glUniform2f(GL.glGetUniformLocation(self._bg_shader.program, "u_resolution"), width, height)
-        GL.glUniform2f(GL.glGetUniformLocation(self._bg_shader.program, "u_center"), width * 0.5, height * 0.5)
-        GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_radius"), radius)
-        GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_focus"), focus)
-        GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_speak"), speak)
-        GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_time"), t)
-        GL.glUniform1f(GL.glGetUniformLocation(self._bg_shader.program, "u_env"), self._env_fast)
+        GL.glUniform2f(self._bg_shader.uniform("u_resolution"), width, height)
+        GL.glUniform2f(self._bg_shader.uniform("u_center"), width * 0.5, height * 0.5)
+        GL.glUniform1f(self._bg_shader.uniform("u_radius"), radius)
+        GL.glUniform1f(self._bg_shader.uniform("u_focus"), focus)
+        GL.glUniform1f(self._bg_shader.uniform("u_speak"), speak)
+        GL.glUniform1f(self._bg_shader.uniform("u_time"), t)
+        GL.glUniform1f(self._bg_shader.uniform("u_env"), self._env_fast)
 
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
 
@@ -271,30 +299,32 @@ class GLESRenderer:
         if self._particle_shader is None or self._particle_vbo is None or self._particle_trail_vbo is None:
             return
         self._particle_shader.use()
-        GL.glUniform2f(GL.glGetUniformLocation(self._particle_shader.program, "u_resolution"), width, height)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_radius"), radius)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_env"), self._env_fast)
+        GL.glUniform2f(self._particle_shader.uniform("u_resolution"), width, height)
+        GL.glUniform1f(self._particle_shader.uniform("u_radius"), radius)
+        GL.glUniform1f(self._particle_shader.uniform("u_env"), self._env_fast)
 
         positions = field.positions
         prev = field.previous
 
-        pos_loc = GL.glGetAttribLocation(self._particle_shader.program, "a_pos")
+        pos_loc = self._p_a_pos if self._p_a_pos is not None else self._particle_shader.attrib("a_pos")
         GL.glEnableVertexAttribArray(pos_loc)
         draw_trails = speak <= 0.5
         if draw_trails:
-            trail = np.hstack([prev, positions]).reshape(-1, 2)
+            trail = field.trail
+            trail[0::2] = prev
+            trail[1::2] = positions
             GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
             GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
             GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 1.0)
-            GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.12)
+            GL.glUniform1f(self._particle_shader.uniform("u_point_size"), 1.0)
+            GL.glUniform1f(self._particle_shader.uniform("u_alpha"), 0.12)
             GL.glDrawArrays(GL.GL_LINES, 0, trail.shape[0])
 
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_vbo)
         GL.glBufferData(GL.GL_ARRAY_BUFFER, positions.nbytes, positions, GL.GL_DYNAMIC_DRAW)
         GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_point_size"), 2.4)
-        GL.glUniform1f(GL.glGetUniformLocation(self._particle_shader.program, "u_alpha"), 0.72)
+        GL.glUniform1f(self._particle_shader.uniform("u_point_size"), 2.4)
+        GL.glUniform1f(self._particle_shader.uniform("u_alpha"), 0.72)
         GL.glDrawArrays(GL.GL_POINTS, 0, positions.shape[0])
 
     def _ensure_particles(self, radius: float, cx: float, cy: float, speak: float) -> _ParticleField:
@@ -321,7 +351,8 @@ class GLESRenderer:
         seeds = np.random.uniform(0.0, 1000.0, target).astype(np.float32)
         ages = np.random.uniform(0.0, 3.0, target).astype(np.float32)
         life = np.random.uniform(1.6, 4.6, target).astype(np.float32)
-        self._field = _ParticleField(positions, previous, seeds, ages, life)
+        trail = np.empty((target * 2, 2), dtype=np.float32)
+        self._field = _ParticleField(positions, previous, seeds, ages, life, trail)
         return self._field
 
     def _update_particles(
