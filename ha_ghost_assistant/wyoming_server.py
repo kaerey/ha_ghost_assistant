@@ -239,7 +239,7 @@ class WyomingServer:
         if event_type == "audio-chunk":
             payload = event.get("_payload")
             if isinstance(payload, (bytes, bytearray)):
-                self._playback.write(payload)
+                asyncio.create_task(asyncio.to_thread(self._playback.write, payload))
             return
         if event_type == "audio-stop":
             await self._playback.stop()

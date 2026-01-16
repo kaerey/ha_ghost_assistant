@@ -190,7 +190,7 @@ class FullscreenRenderer:
         t = time.perf_counter() - self._t0
 
         w, h = self._screen.get_size()
-        cx, cy = w // 2, int(h // 2 + h * 0.02)
+        cx, cy = w // 2, h // 2
 
         # Audio envelope (fast + smoothed)
         rms = _clamp(self._rms, 0.0, 1.0)
@@ -214,9 +214,8 @@ class FullscreenRenderer:
         if self._fx is None or self._fx.get_size() != (w, h):
             self._fx = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
 
-        # Background: deep space with subtle center glow
+        # Background: solid black
         self._screen.fill((0, 0, 0))
-        self._draw_soft_bg(self._screen, w, h)
 
         # Fade persistent trail (filaments/tails)
         # Lower subtract => longer persistence (more "smokey")
@@ -241,9 +240,14 @@ class FullscreenRenderer:
         # Core always on top (white-hot center)
         self._draw_core(self._fx, cx, cy, radius, t, focus, speak)
 
-        # Bloom pass: blur fx lightly then add to screen
-        # factor=4 is a good balance; use 3 if you want fatter bloom.
-        blurred = _cheap_blur(self._fx, factor=4)
+        # Bloom pass: blur fx lightly then add to screen.
+        # Downscale before blurring to cut per-frame cost.
+        blur_scale = 0.5
+        blur_w = max(1, int(w * blur_scale))
+        blur_h = max(1, int(h * blur_scale))
+        small_fx = pygame.transform.smoothscale(self._fx, (blur_w, blur_h))
+        blurred_small = _cheap_blur(small_fx, factor=2)
+        blurred = pygame.transform.smoothscale(blurred_small, (w, h))
         self._screen.blit(blurred, (0, 0), special_flags=pygame.BLEND_ADD)
         self._screen.blit(self._fx, (0, 0), special_flags=pygame.BLEND_ADD)
 
@@ -264,8 +268,9 @@ class FullscreenRenderer:
         surf.blit(g, g.get_rect(center=(w // 2, h // 2)), special_flags=pygame.BLEND_ADD)
 
     def _radial_glow(self, radius: int, color: tuple[int, int, int], alpha: int = 120) -> pygame.Surface:
-        # Simple cache key
-        key = (radius << 16) ^ (alpha << 8) ^ (color[0] << 2) ^ (color[1] << 1) ^ color[2]
+        # Quantize alpha so the cache actually reuses surfaces.
+        alpha_q = max(0, min(255, (alpha // 16) * 16))
+        key = (radius << 16) ^ (alpha_q << 8) ^ (color[0] << 2) ^ (color[1] << 1) ^ color[2]
         cached = self._glow_cache.get(key)
         if cached is not None:
             return cached
@@ -276,7 +281,7 @@ class FullscreenRenderer:
         steps = 28
         for i in range(steps, 0, -1):
             rr = int(radius * (i / steps))
-            a = int(alpha * ((i / steps) ** 2))
+            a = int(alpha_q * ((i / steps) ** 2))
             pygame.draw.circle(s, (color[0], color[1], color[2], a), (cx, cy), rr)
 
         self._glow_cache[key] = s
