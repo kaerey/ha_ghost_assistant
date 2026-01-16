@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -96,13 +97,19 @@ class WakeWordDetector:
             return False
         if self._model_path:
             return True
+        if self._default_model_path():
+            return True
         return self._model_name.lower() != "samantha"
 
     def wake_word_name(self) -> str:
         return self._wake_word_name
 
     def wake_word_model(self) -> str:
-        return self._model_path or self._model_name
+        return (
+            self._model_path
+            or self._default_model_path()
+            or self._model_name
+        )
 
     def notify_detected(self, name: str) -> None:
         if self._on_detected is None:
@@ -114,25 +121,41 @@ class WakeWordDetector:
         if self._model_path:
             model_list = [self._model_path]
         else:
-            if download_models is None:
+            default_model = self._default_model_path()
+            if default_model:
+                model_list = [default_model]
+            elif download_models is None:
                 LOGGER.warning(
                     "No wake word model configured; set HA_GHOST_ASSISTANT_WAKE_WORD_MODEL"
                 )
                 return None
-            if self._model_name.lower() == "samantha":
+            elif self._model_name.lower() == "samantha":
                 LOGGER.warning(
                     "Custom wake word model required for '%s'; set HA_GHOST_ASSISTANT_WAKE_WORD_MODEL",
                     self._model_name,
                 )
                 return None
-            LOGGER.info("Downloading openWakeWord base models for %s", self._model_name)
-            download_models([self._model_name])
-            model_list = [self._model_name]
+            else:
+                LOGGER.info(
+                    "Downloading openWakeWord base models for %s", self._model_name
+                )
+                download_models([self._model_name])
+                model_list = [self._model_name]
         try:
             return OpenWakeWordModel(wakeword_models=model_list)
         except Exception:
             LOGGER.exception("Failed to load openWakeWord model")
             return None
+
+    def _default_model_path(self) -> str | None:
+        if self._model_name.lower() != "samantha":
+            return None
+        wakewords_dir = Path(__file__).resolve().parent / "wakewords" / "samantha"
+        for suffix in ("onnx", "tflite"):
+            candidate = wakewords_dir / f"samantha.{suffix}"
+            if candidate.exists():
+                return str(candidate)
+        return None
 
     async def _run(self) -> None:
         if self._audio_queue is None or self._model is None:

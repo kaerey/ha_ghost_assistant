@@ -31,7 +31,8 @@ python -m ha_ghost_assistant
 
 ### Wake word (openWakeWord)
 * Install the `openwakeword` dependency (it is now listed in `pyproject.toml`).
-* Provide a custom model file trained for the keyword **"Samantha"** and point the app at it:
+* The bundled **"Samantha"** wake word model lives under `ha_ghost_assistant/wakewords/samantha` and is used automatically.
+* To override with your own model file, point the app at it:
   * `export HA_GHOST_ASSISTANT_WAKE_WORD_MODEL=/path/to/samantha.onnx`
   * `export HA_GHOST_ASSISTANT_WAKE_WORD_NAME=Samantha`
   * (Optional) `export HA_GHOST_ASSISTANT_WAKE_WORD_MODEL_NAME=alexa` to use a bundled openWakeWord model instead of a custom file.
@@ -41,7 +42,7 @@ python -m ha_ghost_assistant
   * `HA_GHOST_ASSISTANT_WAKE_WORD=0` to disable wake word detection.
 
 ### Training a custom "Samantha" model
-This repository does not include training scripts. Use openWakeWord's training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file. A typical workflow is:
+This repository does not include training scripts. Use openWakeWord's training workflow to produce a `.onnx` model for the "Samantha" keyword, then point `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` at the resulting file if you want to override the bundled model. A typical workflow is:
 1. Record short wake-word utterances ("Samantha") and background/negative examples at 16 kHz mono.
 2. Follow the openWakeWord training guide to train/export a custom model (see https://github.com/dscripka/openWakeWord and https://github.com/dscripka/openWakeWord/tree/main/docs).
 3. Copy the exported `samantha.onnx` to the device running this app and set `HA_GHOST_ASSISTANT_WAKE_WORD_MODEL` to its path.
