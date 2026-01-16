@@ -75,6 +75,7 @@ class FullscreenRenderer:
         # Timing / perf
         self._clock: pygame.time.Clock | None = None
         self._t0 = time.perf_counter()
+        self._frame_idx: int = 0
 
         # Visual buffers
         self._trail: pygame.Surface | None = None   # persistent (filaments + tails)
@@ -188,6 +189,7 @@ class FullscreenRenderer:
         dt_ms = self._clock.tick(60)
         dt = dt_ms / 1000.0
         t = time.perf_counter() - self._t0
+        self._frame_idx += 1
 
         w, h = self._screen.get_size()
         cx, cy = w // 2, h // 2
@@ -240,10 +242,18 @@ class FullscreenRenderer:
         # Core always on top (white-hot center)
         self._draw_core(self._fx, cx, cy, radius, t, focus, speak)
 
-        # Bloom pass: blur fx lightly then add to screen
-        # factor=4 is a good balance; use 3 if you want fatter bloom.
-        blurred = _cheap_blur(self._fx, factor=4)
-        self._screen.blit(blurred, (0, 0), special_flags=pygame.BLEND_ADD)
+        # Bloom pass: blur fx lightly then add to screen.
+        # NOTE: smoothscale blur is surprisingly expensive at full resolution.
+        # During "responding" we throttle the blur cadence to keep visuals smooth.
+        if self._state == "responding":
+            do_blur = (self._frame_idx % 2) == 0  # half-rate bloom while speaking
+            blur_factor = 5
+        else:
+            do_blur = True
+            blur_factor = 4
+        if do_blur:
+            blurred = _cheap_blur(self._fx, factor=blur_factor)
+            self._screen.blit(blurred, (0, 0), special_flags=pygame.BLEND_ADD)
         self._screen.blit(self._fx, (0, 0), special_flags=pygame.BLEND_ADD)
 
         # Add trails (filaments/tails)
@@ -263,8 +273,14 @@ class FullscreenRenderer:
         surf.blit(g, g.get_rect(center=(w // 2, h // 2)), special_flags=pygame.BLEND_ADD)
 
     def _radial_glow(self, radius: int, color: tuple[int, int, int], alpha: int = 120) -> pygame.Surface:
+        # The glow surfaces are cached, but during "responding" the caller varies alpha
+        # constantly. Quantize alpha (and clamp) so we don't accidentally create hundreds
+        # of near-identical surfaces per second.
+        alpha = max(0, min(255, int(alpha)))
+        alpha_q = (alpha // 16) * 16
+
         # Simple cache key
-        key = (radius << 16) ^ (alpha << 8) ^ (color[0] << 2) ^ (color[1] << 1) ^ color[2]
+        key = (radius << 16) ^ (alpha_q << 8) ^ (color[0] << 2) ^ (color[1] << 1) ^ color[2]
         cached = self._glow_cache.get(key)
         if cached is not None:
             return cached
@@ -275,7 +291,7 @@ class FullscreenRenderer:
         steps = 28
         for i in range(steps, 0, -1):
             rr = int(radius * (i / steps))
-            a = int(alpha * ((i / steps) ** 2))
+            a = int(alpha_q * ((i / steps) ** 2))
             pygame.draw.circle(s, (color[0], color[1], color[2], a), (cx, cy), rr)
 
         self._glow_cache[key] = s
