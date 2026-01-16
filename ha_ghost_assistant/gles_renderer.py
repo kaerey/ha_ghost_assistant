@@ -26,6 +26,7 @@ class _ParticleField:
     seeds: np.ndarray
     ages: np.ndarray
     life: np.ndarray
+    trail: np.ndarray
 
 
 class _ShaderProgram:
@@ -309,7 +310,9 @@ class GLESRenderer:
         GL.glEnableVertexAttribArray(pos_loc)
         draw_trails = speak <= 0.5
         if draw_trails:
-            trail = np.hstack([prev, positions]).reshape(-1, 2)
+            trail = field.trail
+            trail[0::2] = prev
+            trail[1::2] = positions
             GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._particle_trail_vbo)
             GL.glBufferData(GL.GL_ARRAY_BUFFER, trail.nbytes, trail, GL.GL_DYNAMIC_DRAW)
             GL.glVertexAttribPointer(pos_loc, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, None)
@@ -348,7 +351,8 @@ class GLESRenderer:
         seeds = np.random.uniform(0.0, 1000.0, target).astype(np.float32)
         ages = np.random.uniform(0.0, 3.0, target).astype(np.float32)
         life = np.random.uniform(1.6, 4.6, target).astype(np.float32)
-        self._field = _ParticleField(positions, previous, seeds, ages, life)
+        trail = np.empty((target * 2, 2), dtype=np.float32)
+        self._field = _ParticleField(positions, previous, seeds, ages, life, trail)
         return self._field
 
     def _update_particles(
