@@ -219,7 +219,7 @@ class GLESRenderer:
         self._env_slow = (self._env_slow * 0.90) + (rms * 0.10)
         focus = 1.0 if self._state in ("listening", "thinking", "responding") else 0.0
         speak = 1.0 if self._state == "responding" else 0.0
-        skip_update = speak > 0.5 and (self._frame_index % 2 == 0)
+        slow_tick = speak > 0.5 and (self._frame_index % 2 == 0)
 
         base = min(width, height) * 0.16
         pulse = (0.08 + 0.28 * self._env_fast + 0.12 * (self._env_fast**2)) if speak > 0 else (
@@ -231,14 +231,16 @@ class GLESRenderer:
         cx, cy = width * 0.5, height * 0.5
 
         field = self._ensure_particles(radius, cx, cy, speak)
-        if not skip_update:
+        if not slow_tick:
             self._update_particles(field, radius, cx, cy, dt * (2.0 if speak > 0.5 else 1.0), now)
 
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 
-        # Solid black background; glow/haze disabled.
-        self._draw_particles(field, width, height, radius, speak)
+        # Solid black background with a tight core glow.
+        self._draw_background(width, height, radius, focus, speak, now)
+        if not slow_tick:
+            self._draw_particles(field, width, height, radius, speak)
 
         pygame.display.flip()
 
@@ -298,7 +300,7 @@ class GLESRenderer:
     def _ensure_particles(self, radius: float, cx: float, cy: float, speak: float) -> _ParticleField:
         base_target = int(600 + (self._density_1_to_10 - 1) * (3600 / 9))
         if speak > 0.5:
-            target_scale = 0.25
+            target_scale = 0.18
         elif speak > 0.2:
             target_scale = 0.55
         else:
@@ -405,18 +407,16 @@ void main() {
     vec2 frag = v_uv * u_resolution;
     vec2 d = (frag - u_center) / max(u_radius, 1.0);
     float r = length(d);
-    float core = exp(-r * r * 4.2);
-    float halo = exp(-r * r * 1.15);
-    float corona = exp(-r * r * 0.45);
-    float pulse = 0.6 + 0.4 * sin(u_time * 2.1);
-    vec3 base = vec3(0.03, 0.01, 0.06);
+    float core = exp(-r * r * 6.0);
+    float halo = exp(-r * r * 2.6);
+    float fade = smoothstep(1.4, 0.6, r);
     vec3 core_col = vec3(0.95, 0.85, 1.0);
     vec3 halo_col = vec3(0.69, 0.42, 1.0);
     vec3 corona_col = vec3(0.23, 0.06, 0.45);
-    vec3 color = base;
-    color += core_col * core * (0.6 + 0.6 * u_env + 0.4 * u_speak);
-    color += halo_col * halo * (0.35 + 0.5 * u_env + 0.3 * u_focus);
-    color += corona_col * corona * (0.15 + 0.25 * pulse);
+    vec3 color = vec3(0.0);
+    color += core_col * core * (0.8 + 0.5 * u_env + 0.4 * u_speak);
+    color += halo_col * halo * (0.25 + 0.4 * u_env + 0.2 * u_focus);
+    color *= fade;
     gl_FragColor = vec4(color, 1.0);
 }
 """
