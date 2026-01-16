@@ -134,6 +134,11 @@ class WyomingServer:
         self._pong_event = asyncio.Event()
         self._ping_task: asyncio.Task[None] | None = None
         self._responding_timeout_task: asyncio.Task[None] | None = None
+        self._rx_audio_chunks = 0
+        self._tx_audio_chunks = 0
+        self._last_rx_chunk_log_t = 0.0
+        self._last_tx_chunk_log_t = 0.0
+        self._noisy_event_types = {"ping", "pong", "audio-chunk"}
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -171,7 +176,20 @@ class WyomingServer:
                 if event is None:
                     break
                 event_type = event.get("type")
-                if event_type != "ping":
+                if event_type in self._noisy_event_types:
+                    if event_type == "audio-chunk":
+                        self._rx_audio_chunks += 1
+                        now = time.monotonic()
+                        if now - self._last_rx_chunk_log_t >= 1.0:
+                            self._last_rx_chunk_log_t = now
+                            LOGGER.debug(
+                                "Wyoming audio-chunk RX: %d chunks (last ~1s)",
+                                self._rx_audio_chunks,
+                            )
+                            self._rx_audio_chunks = 0
+                    else:
+                        LOGGER.debug("Wyoming event received: %s", event_type)
+                else:
                     LOGGER.info("Wyoming event received: %s", event_type)
                 if event_type != "describe":
                     if self._server_id != client_id:
@@ -491,8 +509,22 @@ class WyomingServer:
         if payload is not None:
             event = dict(event)
             event["payload_length"] = len(payload)
-        if event.get("type") != "pong":
-            LOGGER.info("Wyoming event sent: %s", event.get("type"))
+        event_type = event.get("type")
+        if event_type in self._noisy_event_types:
+            if event_type == "audio-chunk":
+                self._tx_audio_chunks += 1
+                now = time.monotonic()
+                if now - self._last_tx_chunk_log_t >= 1.0:
+                    self._last_tx_chunk_log_t = now
+                    LOGGER.debug(
+                        "Wyoming audio-chunk TX: %d chunks (last ~1s)",
+                        self._tx_audio_chunks,
+                    )
+                    self._tx_audio_chunks = 0
+            else:
+                LOGGER.debug("Wyoming event sent: %s", event_type)
+        else:
+            LOGGER.info("Wyoming event sent: %s", event_type)
         message = json.dumps(event).encode("utf-8") + b"\n"
         async with self._writer_lock:
             writer.write(message)
