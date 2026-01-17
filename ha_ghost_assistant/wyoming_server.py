@@ -275,6 +275,14 @@ class WyomingServer:
             LOGGER.info("Wyoming transcript received: %s", data)
             self._set_state("thinking")
             return
+        if event_type == "transcribe":
+            data = event.get("data")
+            LOGGER.info("Wyoming transcribe received: %s", data)
+            if self._run_satellite_ready:
+                await self._start_streaming()
+            else:
+                self._pending_stream = True
+            return
         if event_type == "synthesize":
             data = event.get("data")
             LOGGER.info("Wyoming synthesize received: %s", data)
