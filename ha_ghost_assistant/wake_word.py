@@ -118,6 +118,14 @@ class WakeWordDetector:
         self._on_detected(name)
 
     def _build_model(self) -> OpenWakeWordModel | None:
+        if download_models is not None:
+            try:
+                download_models()
+            except Exception as err:
+                LOGGER.error(
+                    "Failed to download openWakeWord models: %s", err
+                )
+                return None
         if not self._has_openwakeword_resources():
             return None
         model_list: list[str] = []
