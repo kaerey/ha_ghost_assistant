@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import time
+from importlib import resources
 from pathlib import Path
 from typing import Callable
 
@@ -117,6 +118,8 @@ class WakeWordDetector:
         self._on_detected(name)
 
     def _build_model(self) -> OpenWakeWordModel | None:
+        if not self._has_openwakeword_resources():
+            return None
         model_list: list[str] = []
         if self._model_path:
             model_list = [self._model_path]
@@ -146,6 +149,20 @@ class WakeWordDetector:
         except Exception:
             LOGGER.exception("Failed to load openWakeWord model")
             return None
+
+    def _has_openwakeword_resources(self) -> bool:
+        try:
+            models_dir = resources.files("openwakeword") / "resources" / "models"
+        except Exception:  # pragma: no cover - defensive
+            return True
+        for filename in ("melspectrogram.onnx", "melspectrogram.tflite"):
+            if (models_dir / filename).is_file():
+                return True
+        LOGGER.error(
+            "openWakeWord resources are missing (no melspectrogram model found). "
+            "Reinstall openwakeword or ensure package data is present."
+        )
+        return False
 
     def _default_model_path(self) -> str | None:
         if self._model_name.lower() != "samantha":
